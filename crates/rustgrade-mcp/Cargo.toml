@@ -1,0 +1,15 @@
+[package]
+name = "rustgrade-mcp"
+description = "Optional MCP adapter over rustgrade-core (stdio)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rustgrade-core.workspace = true
+anyhow.workspace = true
+# TODO: add `rmcp` when the adapter is implemented (roadmap v0.6).
+
+[lints]
+workspace = true

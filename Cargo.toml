@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = ["crates/rustgrade-core", "crates/rustgrade-cli", "crates/rustgrade-mcp"]
+
+[workspace.package]
+version = "0.2.0-dev"
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+
+[workspace.dependencies]
+rustgrade-core = { path = "crates/rustgrade-core" }
+rustgrade-mcp = { path = "crates/rustgrade-mcp" }
+syn = { version = "2", features = ["full", "visit", "extra-traits"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+thiserror = "2"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
