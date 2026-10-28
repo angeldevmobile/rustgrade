@@ -40,6 +40,8 @@ pub enum Category {
     Concurrency,
     Unsafe,
     ApiDesign,
+    /// Problems with rustgrade's own annotations (malformed or stale suppressions).
+    Meta,
 }
 
 /// 1-based line and column, matching what editors and SARIF expect.

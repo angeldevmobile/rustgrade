@@ -14,11 +14,20 @@ pub fn render(report: &Report) -> anyhow::Result<()> {
             writeln!(out, "    help: {help}")?;
         }
     }
-    writeln!(
+    write!(
         out,
         "{} finding(s) in {} file(s)",
         report.findings.len(),
         report.files_scanned
     )?;
+    if report.suppressed.is_empty() {
+        writeln!(out)?;
+    } else {
+        writeln!(
+            out,
+            ", {} suppressed (see --format json)",
+            report.suppressed.len()
+        )?;
+    }
     Ok(())
 }

@@ -32,7 +32,7 @@ impl Rule for CloneInLoop {
         } else {
             self.default_severity()
         };
-        for_each_expr_in_loop(ctx.ast, &[], |expr| {
+        for_each_expr_in_loop(ctx.ast, |expr| {
             let syn::Expr::MethodCall(call) = expr else {
                 return;
             };
@@ -95,6 +95,19 @@ mod tests {
     fn nested_fn_resets_loop_context() {
         let src = "fn f() { for _ in 0..3 { fn g() { x.clone(); } } }";
         assert!(run(&CloneInLoop, src).is_empty());
+    }
+
+    #[test]
+    fn ignores_stored_values_and_early_exits() {
+        let src = "fn f() {
+            for x in xs {
+                out.push(x.clone());
+                if done { return Err(name.to_owned()); }
+                if found { break x.clone(); }
+                let tmp = x.clone();
+            }
+        }";
+        assert_eq!(run(&CloneInLoop, src).len(), 1);
     }
 
     #[test]

@@ -191,6 +191,7 @@ version = "0.2.0-dev"
 dependencies = [
  "proc-macro2",
  "serde",
+ "serde_json",
  "syn 2.0.119",
  "thiserror",
  "toml",

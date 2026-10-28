@@ -11,8 +11,6 @@ const COLLECTIONS: &[&str] = &[
 ];
 const METHODS: &[&str] = &["to_string", "to_vec"];
 const MACROS: &[&str] = &["format", "vec"];
-/// An allocation passed to these is the value being stored, not waste.
-const STORED_BY: &[&str] = &["push", "push_back", "push_front", "insert", "send"];
 
 impl Rule for AllocInLoop {
     fn id(&self) -> &'static str {
@@ -40,7 +38,7 @@ impl Rule for AllocInLoop {
         } else {
             self.default_severity()
         };
-        for_each_expr_in_loop(ctx.ast, STORED_BY, |expr| {
+        for_each_expr_in_loop(ctx.ast, |expr| {
             let Some((what, span)) = allocation(expr) else {
                 return;
             };
