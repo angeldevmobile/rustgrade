@@ -13,7 +13,11 @@ pub const EXIT_FINDINGS: u8 = 1;
 pub const EXIT_TOOL_ERROR: u8 = 2;
 
 #[derive(Parser)]
-#[command(name = "rustgrade", version, about = "Systems-level Rust review for AI coding agents and for CI")]
+#[command(
+    name = "rustgrade",
+    version,
+    about = "Systems-level Rust review for AI coding agents and for CI"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,

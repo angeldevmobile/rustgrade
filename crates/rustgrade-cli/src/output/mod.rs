@@ -10,6 +10,8 @@ pub fn render(report: &Report, format: Format) -> anyhow::Result<()> {
         Format::Text => text::render(report),
         Format::Json => json::render(report),
         // TODO: sarif (for code scanning) and markdown (for PR comments).
-        Format::Sarif | Format::Markdown => anyhow::bail!("this output format is not implemented yet"),
+        Format::Sarif | Format::Markdown => {
+            anyhow::bail!("this output format is not implemented yet")
+        }
     }
 }

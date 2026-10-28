@@ -5,6 +5,7 @@ use crate::finding::{Category, Finding, Severity};
 mod alloc_in_loop;
 mod anyhow_in_lib_api;
 mod clone_in_loop;
+mod common;
 mod lock_across_await;
 mod ref_owned_param;
 mod unbounded_channel;
@@ -14,6 +15,8 @@ mod unwrap_outside_tests;
 /// What a rule sees for one file.
 pub struct FileContext<'a> {
     pub path: &'a str,
+    /// Raw text, for what the AST drops (comments).
+    pub source: &'a str,
     pub ast: &'a syn::File,
     /// File matches a configured hot path; performance rules may raise severity.
     pub is_hot: bool,
@@ -63,11 +66,21 @@ pub(crate) mod test_util {
 
     /// Runs one rule over a source snippet at a given path.
     pub fn run_at(rule: &dyn Rule, path: &str, src: &str) -> Vec<Finding> {
+        run_with(rule, path, src, false)
+    }
+
+    /// Runs one rule over a source snippet in a file marked hot.
+    pub fn run_hot(rule: &dyn Rule, src: &str) -> Vec<Finding> {
+        run_with(rule, "src/lib.rs", src, true)
+    }
+
+    fn run_with(rule: &dyn Rule, path: &str, src: &str, is_hot: bool) -> Vec<Finding> {
         let ast = syn::parse_file(src).expect("test source must parse");
         let ctx = FileContext {
             path,
+            source: src,
             ast: &ast,
-            is_hot: false,
+            is_hot,
         };
         let mut out = Vec::new();
         rule.check(&ctx, &mut out);

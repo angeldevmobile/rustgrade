@@ -10,6 +10,27 @@ pub enum Severity {
     Critical,
 }
 
+impl Severity {
+    /// Same spelling as the JSON output.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Info => "info",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Critical => "critical",
+        }
+    }
+}
+
+impl std::fmt::Display for Severity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // `pad` so width and alignment flags (`{:<9}`) apply.
+        f.pad(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Category {

@@ -48,6 +48,7 @@ pub fn scan_file(file: &SourceFile<'_>, config: &Config) -> Result<Vec<Finding>,
     })?;
     let ctx = rules::FileContext {
         path: file.path,
+        source: file.source,
         ast: &ast,
         is_hot: config.is_hot(file.path),
     };
@@ -79,7 +80,11 @@ where
             Err(e) => errors.push(e),
         }
     }
-    findings.sort_by(|a, b| b.severity.cmp(&a.severity).then_with(|| a.span.cmp(&b.span)));
+    findings.sort_by(|a, b| {
+        b.severity
+            .cmp(&a.severity)
+            .then_with(|| a.span.cmp(&b.span))
+    });
     let report = Report {
         schema: SCHEMA_VERSION,
         files_scanned,

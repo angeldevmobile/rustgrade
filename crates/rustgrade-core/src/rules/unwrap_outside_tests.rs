@@ -1,5 +1,6 @@
 use syn::visit::{self, Visit};
 
+use super::common::{is_test_only, is_test_path};
 use super::{FileContext, Rule};
 use crate::finding::{Category, Finding, Severity, Span};
 
@@ -91,42 +92,6 @@ impl<'ast> Visit<'ast> for Visitor<'_, '_> {
     }
 }
 
-/// Integration tests, benches and examples may unwrap freely.
-fn is_test_path(path: &str) -> bool {
-    path.split('/')
-        .any(|c| matches!(c, "tests" | "benches" | "examples"))
-}
-
-/// `#[test]`, `#[tokio::test]`, `#[cfg(test)]` or `#[cfg(all(test, ...))]`.
-fn is_test_only(attrs: &[syn::Attribute]) -> bool {
-    attrs.iter().any(|attr| {
-        let path = attr.path();
-        if path.segments.last().is_some_and(|s| s.ident == "test") {
-            return true;
-        }
-        if path.is_ident("cfg") {
-            return attr
-                .parse_args::<syn::Meta>()
-                .is_ok_and(|meta| cfg_requires_test(&meta));
-        }
-        false
-    })
-}
-
-/// True only when the cfg can hold *only* under `test`. `any(...)` and `not(...)`
-/// return false so that code which also builds outside tests is still scanned.
-fn cfg_requires_test(meta: &syn::Meta) -> bool {
-    match meta {
-        syn::Meta::Path(p) => p.is_ident("test"),
-        syn::Meta::List(list) if list.path.is_ident("all") => list
-            .parse_args_with(
-                syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
-            )
-            .is_ok_and(|items| items.iter().any(cfg_requires_test)),
-        _ => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,7 +110,10 @@ mod tests {
 
     #[test]
     fn expect_is_medium() {
-        let found = run(&UnwrapOutsideTests, r#"fn f() { x.expect("set in new()"); }"#);
+        let found = run(
+            &UnwrapOutsideTests,
+            r#"fn f() { x.expect("set in new()"); }"#,
+        );
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].severity, Severity::Medium);
     }

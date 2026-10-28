@@ -7,7 +7,7 @@ pub fn render(report: &Report) -> anyhow::Result<()> {
     for f in &report.findings {
         writeln!(
             out,
-            "{}:{}:{}: {:?} [{}] {}",
+            "{}:{}:{}: {} [{}] {}",
             f.span.file, f.span.line, f.span.column, f.severity, f.rule, f.message
         )?;
         if let Some(help) = &f.help {

@@ -25,7 +25,9 @@ pub fn run(path: Option<&Path>, globals: &Globals) -> anyhow::Result<u8> {
         .collect::<anyhow::Result<Vec<_>>>()?;
 
     let (report, errors) = rustgrade_core::scan(
-        sources.iter().map(|(path, source)| SourceFile { path, source }),
+        sources
+            .iter()
+            .map(|(path, source)| SourceFile { path, source }),
         &config,
     );
     for e in &errors {
