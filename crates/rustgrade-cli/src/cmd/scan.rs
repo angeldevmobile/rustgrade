@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -16,18 +17,22 @@ pub fn run(path: Option<&Path>, globals: &Globals) -> anyhow::Result<u8> {
     }
 
     let files = collect_rs_files(root)?;
+    let mut crate_dirs = HashMap::new();
     let sources = files
         .iter()
         .map(|p| {
             let src = fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))?;
-            Ok((display_path(root, p), src))
+            let in_lib = in_library(p, &mut crate_dirs);
+            Ok((display_path(root, p), src, in_lib))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
     let (report, errors) = rustgrade_core::scan(
-        sources
-            .iter()
-            .map(|(path, source)| SourceFile { path, source }),
+        sources.iter().map(|(path, source, in_lib)| SourceFile {
+            path,
+            source,
+            in_lib: *in_lib,
+        }),
         &config,
     );
     for e in &errors {
@@ -77,6 +82,33 @@ fn collect_rs_files(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
     }
     out.sort();
     Ok(out)
+}
+
+/// True if `file` is part of a library target: its crate has `src/lib.rs` and
+/// the file is under `src/` but is not `src/main.rs` or under `src/bin/`.
+// TODO: honor custom `[lib] path` / `[[bin]] path` via cargo metadata.
+fn in_library(file: &Path, crate_dirs: &mut HashMap<PathBuf, Option<PathBuf>>) -> bool {
+    let file = fs::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
+    let Some(dir) = file.parent() else {
+        return false;
+    };
+    let crate_dir = crate_dirs
+        .entry(dir.to_path_buf())
+        .or_insert_with(|| {
+            dir.ancestors()
+                .find(|d| d.join("Cargo.toml").is_file())
+                .map(Path::to_path_buf)
+        })
+        .as_deref();
+    let Some(crate_dir) = crate_dir else {
+        return false;
+    };
+    let src = crate_dir.join("src");
+    if !src.join("lib.rs").is_file() {
+        return false;
+    }
+    file.strip_prefix(&src)
+        .is_ok_and(|rel| rel != Path::new("main.rs") && !rel.starts_with("bin"))
 }
 
 /// Paths relative to the scan root with forward slashes, so output is stable across OSes.

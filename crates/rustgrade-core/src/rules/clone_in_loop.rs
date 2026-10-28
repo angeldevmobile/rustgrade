@@ -32,7 +32,7 @@ impl Rule for CloneInLoop {
         } else {
             self.default_severity()
         };
-        for_each_expr_in_loop(ctx.ast, |expr| {
+        for_each_expr_in_loop(ctx.ast, &[], |expr| {
             let syn::Expr::MethodCall(call) = expr else {
                 return;
             };

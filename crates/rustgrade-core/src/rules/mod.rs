@@ -20,6 +20,8 @@ pub struct FileContext<'a> {
     pub ast: &'a syn::File,
     /// File matches a configured hot path; performance rules may raise severity.
     pub is_hot: bool,
+    /// File belongs to a library target, so its `pub` items are a public API.
+    pub in_lib: bool,
 }
 
 pub trait Rule: Sync {
@@ -66,21 +68,33 @@ pub(crate) mod test_util {
 
     /// Runs one rule over a source snippet at a given path.
     pub fn run_at(rule: &dyn Rule, path: &str, src: &str) -> Vec<Finding> {
-        run_with(rule, path, src, false)
+        run_with(rule, path, src, false, true)
     }
 
     /// Runs one rule over a source snippet in a file marked hot.
     pub fn run_hot(rule: &dyn Rule, src: &str) -> Vec<Finding> {
-        run_with(rule, "src/lib.rs", src, true)
+        run_with(rule, "src/lib.rs", src, true, true)
     }
 
-    fn run_with(rule: &dyn Rule, path: &str, src: &str, is_hot: bool) -> Vec<Finding> {
+    /// Runs one rule over a source snippet in a binary target.
+    pub fn run_bin(rule: &dyn Rule, src: &str) -> Vec<Finding> {
+        run_with(rule, "src/main.rs", src, false, false)
+    }
+
+    fn run_with(
+        rule: &dyn Rule,
+        path: &str,
+        src: &str,
+        is_hot: bool,
+        in_lib: bool,
+    ) -> Vec<Finding> {
         let ast = syn::parse_file(src).expect("test source must parse");
         let ctx = FileContext {
             path,
             source: src,
             ast: &ast,
             is_hot,
+            in_lib,
         };
         let mut out = Vec::new();
         rule.check(&ctx, &mut out);

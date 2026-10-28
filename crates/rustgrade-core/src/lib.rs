@@ -27,6 +27,9 @@ pub enum ScanError {
 pub struct SourceFile<'a> {
     pub path: &'a str,
     pub source: &'a str,
+    /// File belongs to a library target, so its `pub` items are a public API.
+    /// The caller decides, since that needs `Cargo.toml`.
+    pub in_lib: bool,
 }
 
 /// Result of scanning a set of files.
@@ -51,6 +54,7 @@ pub fn scan_file(file: &SourceFile<'_>, config: &Config) -> Result<Vec<Finding>,
         source: file.source,
         ast: &ast,
         is_hot: config.is_hot(file.path),
+        in_lib: file.in_lib,
     };
 
     let mut findings = Vec::new();

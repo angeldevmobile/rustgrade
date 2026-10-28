@@ -43,10 +43,20 @@ fn cfg_requires_test(meta: &syn::Meta) -> bool {
 ///
 /// Counts `for` bodies (not the iterator expression), `while` conditions and
 /// bodies, and `loop` bodies. A nested `fn` starts outside any loop again, and
-/// so do the arguments of [`LAZY_ERROR_METHODS`], which only run on failure.
+/// so do the arguments of [`LAZY_ERROR_METHODS`], which only run on failure,
+/// and of any method named in `exempt_args_of`.
 /// Closures passed to iterator adapters (`.map(|x| ..)`) are not counted yet.
-pub fn for_each_expr_in_loop<'ast>(file: &'ast syn::File, on_expr: impl FnMut(&'ast syn::Expr)) {
-    LoopWalker { depth: 0, on_expr }.visit_file(file);
+pub fn for_each_expr_in_loop<'ast>(
+    file: &'ast syn::File,
+    exempt_args_of: &[&str],
+    on_expr: impl FnMut(&'ast syn::Expr),
+) {
+    LoopWalker {
+        depth: 0,
+        exempt_args_of,
+        on_expr,
+    }
+    .visit_file(file);
 }
 
 /// Methods whose closure argument runs only on the error / `None` path.
@@ -58,12 +68,13 @@ const LAZY_ERROR_METHODS: &[&str] = &[
     "or_else",
 ];
 
-struct LoopWalker<F> {
+struct LoopWalker<'x, F> {
     depth: usize,
+    exempt_args_of: &'x [&'x str],
     on_expr: F,
 }
 
-impl<F> LoopWalker<F> {
+impl<F> LoopWalker<'_, F> {
     fn nested_fn(&mut self, attrs: &[syn::Attribute], walk: impl FnOnce(&mut Self)) {
         if is_test_only(attrs) {
             return;
@@ -84,7 +95,7 @@ impl<F> LoopWalker<F> {
     }
 }
 
-impl<'ast, F: FnMut(&'ast syn::Expr)> Visit<'ast> for LoopWalker<F> {
+impl<'ast, F: FnMut(&'ast syn::Expr)> Visit<'ast> for LoopWalker<'_, F> {
     fn visit_expr(&mut self, e: &'ast syn::Expr) {
         if self.depth > 0 {
             (self.on_expr)(e);
@@ -93,7 +104,11 @@ impl<'ast, F: FnMut(&'ast syn::Expr)> Visit<'ast> for LoopWalker<F> {
     }
 
     fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
-        if !LAZY_ERROR_METHODS.iter().any(|m| call.method == m) {
+        let exempt = LAZY_ERROR_METHODS
+            .iter()
+            .chain(self.exempt_args_of)
+            .any(|m| call.method == m);
+        if !exempt {
             visit::visit_expr_method_call(self, call);
             return;
         }
