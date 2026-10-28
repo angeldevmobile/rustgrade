@@ -1,0 +1,13 @@
+{
+  "name": "rustgrade",
+  "owner": {
+    "name": "angeldevmobile"
+  },
+  "plugins": [
+    {
+      "name": "rustgrade",
+      "source": "./",
+      "description": "Systems-level Rust review: /audit, /hot-path and a skill that drives the rustgrade CLI."
+    }
+  ]
+}

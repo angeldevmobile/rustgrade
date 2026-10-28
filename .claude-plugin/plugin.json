@@ -1,0 +1,12 @@
+{
+  "name": "rustgrade",
+  "version": "0.2.0-dev",
+  "description": "Systems-level Rust review for coding agents: senior defaults for ownership, errors, unsafe, concurrency and performance, grounded in the rustgrade CLI scanner.",
+  "author": {
+    "name": "angeldevmobile"
+  },
+  "homepage": "https://github.com/angeldevmobile/rustgrade",
+  "repository": "https://github.com/angeldevmobile/rustgrade",
+  "license": "MIT",
+  "keywords": ["rust", "code-review", "performance", "unsafe", "concurrency", "linter"]
+}
