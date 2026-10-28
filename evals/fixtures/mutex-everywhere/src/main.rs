@@ -1,5 +1,7 @@
 //! Fixture: a worker pool wired with unbounded channels and shared mutexes.
 
+mod server;
+
 use std::sync::mpsc::{channel, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::thread;
