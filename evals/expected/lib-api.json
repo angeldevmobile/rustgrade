@@ -1,0 +1,63 @@
+{
+  "files_scanned": 4,
+  "findings": [
+    {
+      "category": "errors",
+      "help": "expose a typed error (e.g. a `thiserror` enum) so callers can match on failures; keep `anyhow` for binaries",
+      "message": "public fn `parse` returns an `anyhow` error",
+      "rule": "anyhow-in-lib-api",
+      "severity": "medium",
+      "span": {
+        "column": 8,
+        "end_column": 13,
+        "end_line": 1,
+        "file": "src/config.rs",
+        "line": 1
+      }
+    },
+    {
+      "category": "errors",
+      "help": "expose a typed error (e.g. a `thiserror` enum) so callers can match on failures; keep `anyhow` for binaries",
+      "message": "public fn `load` returns an `anyhow` error",
+      "rule": "anyhow-in-lib-api",
+      "severity": "medium",
+      "span": {
+        "column": 8,
+        "end_column": 12,
+        "end_line": 7,
+        "file": "src/lib.rs",
+        "line": 7
+      }
+    },
+    {
+      "category": "api-design",
+      "help": "take `&Path`: `&PathBuf` coerces to it, and it also accepts borrowed data",
+      "message": "`&PathBuf` parameter in `load`",
+      "rule": "ref-owned-param",
+      "severity": "low",
+      "span": {
+        "column": 31,
+        "end_column": 38,
+        "end_line": 7,
+        "file": "src/lib.rs",
+        "line": 7
+      }
+    },
+    {
+      "category": "api-design",
+      "help": "take `&str`: `&String` coerces to it, and it also accepts borrowed data",
+      "message": "`&String` parameter in `greet`",
+      "rule": "ref-owned-param",
+      "severity": "low",
+      "span": {
+        "column": 21,
+        "end_column": 27,
+        "end_line": 11,
+        "file": "src/lib.rs",
+        "line": 11
+      }
+    }
+  ],
+  "schema": 1,
+  "suppressed": []
+}

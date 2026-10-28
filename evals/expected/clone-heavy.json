@@ -1,0 +1,63 @@
+{
+  "files_scanned": 1,
+  "findings": [
+    {
+      "category": "unsafe",
+      "help": "state the invariants that make this sound, e.g. `// SAFETY: idx < len, checked above`",
+      "message": "`unsafe` block without a `// SAFETY:` comment",
+      "rule": "undocumented-unsafe",
+      "severity": "critical",
+      "span": {
+        "column": 5,
+        "end_column": 11,
+        "end_line": 23,
+        "file": "src/lib.rs",
+        "line": 23
+      }
+    },
+    {
+      "category": "performance",
+      "help": "borrow instead, hoist the clone out of the loop, or use `Arc::clone(&x)` if it is a cheap refcount bump",
+      "message": "`.clone()` runs on every iteration",
+      "rule": "clone-in-loop",
+      "severity": "medium",
+      "span": {
+        "column": 39,
+        "end_column": 44,
+        "end_line": 12,
+        "file": "src/lib.rs",
+        "line": 12
+      }
+    },
+    {
+      "category": "performance",
+      "help": "hoist the buffer out of the loop and `.clear()` it, or write into an existing one (`write!`, `extend`)",
+      "message": "`String::new` allocates on every iteration",
+      "rule": "alloc-in-loop",
+      "severity": "medium",
+      "span": {
+        "column": 32,
+        "end_column": 35,
+        "end_line": 13,
+        "file": "src/lib.rs",
+        "line": 13
+      }
+    },
+    {
+      "category": "performance",
+      "help": "hoist the buffer out of the loop and `.clear()` it, or write into an existing one (`write!`, `extend`)",
+      "message": "`format!` allocates on every iteration",
+      "rule": "alloc-in-loop",
+      "severity": "medium",
+      "span": {
+        "column": 28,
+        "end_column": 34,
+        "end_line": 15,
+        "file": "src/lib.rs",
+        "line": 15
+      }
+    }
+  ],
+  "schema": 1,
+  "suppressed": []
+}

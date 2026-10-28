@@ -1,0 +1,35 @@
+{
+  "files_scanned": 1,
+  "findings": [
+    {
+      "category": "errors",
+      "help": "propagate with `?`, handle the error, or document why it cannot fail",
+      "message": "`.unwrap()` panics on the error path",
+      "rule": "unwrap-outside-tests",
+      "severity": "high",
+      "span": {
+        "column": 43,
+        "end_column": 49,
+        "end_line": 6,
+        "file": "src/main.rs",
+        "line": 6
+      }
+    },
+    {
+      "category": "errors",
+      "help": "propagate with `?`, handle the error, or document why it cannot fail",
+      "message": "`.expect()` panics on the error path",
+      "rule": "unwrap-outside-tests",
+      "severity": "medium",
+      "span": {
+        "column": 39,
+        "end_column": 45,
+        "end_line": 7,
+        "file": "src/main.rs",
+        "line": 7
+      }
+    }
+  ],
+  "schema": 1,
+  "suppressed": []
+}
