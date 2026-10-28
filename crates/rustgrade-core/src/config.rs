@@ -11,6 +11,9 @@ pub struct Config {
     /// Path prefixes treated as hot, so performance rules weigh more.
     // TODO: switch to real glob matching (globset) when `--hot <glob>` lands.
     pub hot: Vec<String>,
+    /// Gitignore-style globs, relative to the scan root, to skip on top of
+    /// `.gitignore` (e.g. `"evals/fixtures/"`). Matching is the caller's job.
+    pub exclude: Vec<String>,
     pub min_severity: Severity,
 }
 
@@ -19,6 +22,7 @@ impl Default for Config {
         Self {
             allow: Vec::new(),
             hot: Vec::new(),
+            exclude: Vec::new(),
             min_severity: Severity::Info,
         }
     }
@@ -52,12 +56,14 @@ mod tests {
             r#"
             allow = ["clone-in-loop"]
             hot = ["src/engine/"]
+            exclude = ["evals/fixtures/"]
             min_severity = "medium"
             "#,
         )
         .unwrap();
         assert!(!cfg.is_enabled("clone-in-loop"));
         assert!(cfg.is_hot("src/engine/tick.rs"));
+        assert_eq!(cfg.exclude, ["evals/fixtures/"]);
         assert_eq!(cfg.min_severity, Severity::Medium);
     }
 

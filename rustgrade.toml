@@ -1,0 +1,5 @@
+# rustgrade's own configuration, used when scanning this repo.
+
+# Fixtures contain anti-patterns on purpose; they are checked by the snapshot
+# tests in crates/rustgrade-cli/tests/fixtures.rs instead.
+exclude = ["evals/fixtures/"]

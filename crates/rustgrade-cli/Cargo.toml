@@ -19,6 +19,7 @@ rustgrade-core.workspace = true
 rustgrade-mcp = { workspace = true, optional = true }
 anyhow.workspace = true
 clap.workspace = true
+ignore = "0.4"
 serde_json.workspace = true
 
 [lints]

@@ -16,7 +16,7 @@ pub fn run(path: Option<&Path>, globals: &Globals) -> anyhow::Result<u8> {
         config.min_severity = min;
     }
 
-    let files = collect_rs_files(root)?;
+    let files = collect_rs_files(root, &config.exclude)?;
     let mut crate_dirs = HashMap::new();
     let sources = files
         .iter()
@@ -56,28 +56,34 @@ fn load_config(root: &Path) -> anyhow::Result<Config> {
     }
 }
 
-/// Recursively finds `.rs` files, skipping `target/` and hidden directories.
-// TODO: respect .gitignore and workspace members (cargo metadata).
-fn collect_rs_files(root: &Path) -> anyhow::Result<Vec<PathBuf>> {
-    let mut out = Vec::new();
+/// Recursively finds `.rs` files the way ripgrep would: honoring `.gitignore`,
+/// `.ignore` and git's global excludes (even outside a git repo), skipping
+/// hidden entries, `target/` and the config's `exclude` globs.
+// TODO: walk workspace members from cargo metadata instead of the filesystem.
+fn collect_rs_files(root: &Path, exclude: &[String]) -> anyhow::Result<Vec<PathBuf>> {
     if root.is_file() {
-        out.push(root.to_path_buf());
-        return Ok(out);
+        return Ok(vec![root.to_path_buf()]);
     }
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        for entry in fs::read_dir(&dir).with_context(|| format!("reading {}", dir.display()))? {
-            let entry = entry?;
-            let path = entry.path();
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if entry.file_type()?.is_dir() {
-                if name != "target" && !name.starts_with('.') {
-                    stack.push(path);
-                }
-            } else if path.extension().is_some_and(|e| e == "rs") {
-                out.push(path);
-            }
+    let mut overrides = ignore::overrides::OverrideBuilder::new(root);
+    for glob in exclude {
+        overrides
+            // rustgrade: allow(alloc-in-loop) once per config entry; the builder needs a negated &str
+            .add(&format!("!{glob}"))
+            .with_context(|| format!("invalid exclude glob `{glob}` in {CONFIG_FILE}"))?;
+    }
+    let walker = ignore::WalkBuilder::new(root)
+        .require_git(false)
+        .overrides(overrides.build()?)
+        // Not every repo gitignores it, and it is never source.
+        .filter_entry(|e| e.file_name() != "target")
+        .build();
+
+    let mut out = Vec::new();
+    for entry in walker {
+        let entry = entry.with_context(|| format!("walking {}", root.display()))?;
+        let is_file = entry.file_type().is_some_and(|t| t.is_file());
+        if is_file && entry.path().extension().is_some_and(|e| e == "rs") {
+            out.push(entry.into_path());
         }
     }
     out.sort();
