@@ -25,6 +25,10 @@ impl Rule for AnyhowInLibApi {
         "Public library API returns `anyhow::Result` / `anyhow::Error`"
     }
 
+    fn explain(&self) -> &'static str {
+        EXPLAIN
+    }
+
     // Approximations: `use` imports are collected file-wide (ignoring scope),
     // and a `pub` item in a file reached through a private `mod foo;` still
     // counts, because one file cannot see how its module is declared.
@@ -184,6 +188,27 @@ impl<'ast> Visit<'ast> for Visitor<'_, '_> {
         }
     }
 }
+
+const EXPLAIN: &str = r#"Why: callers of a library need to match on failures (retry a timeout,
+return 404 on not-found). `anyhow::Error` erases the type, so they can only
+print it. Libraries expose a typed error; binaries keep `anyhow`. Only `pub`
+items of library targets are checked.
+
+Before:
+    pub fn load(path: &Path) -> anyhow::Result<Config> { ... }
+
+After:
+    #[derive(Debug, thiserror::Error)]
+    #[non_exhaustive]
+    pub enum ConfigError {
+        #[error("reading {path}")]
+        Io { path: PathBuf, #[source] source: std::io::Error },
+        #[error("invalid config")]
+        Parse(#[from] toml::de::Error),
+    }
+
+    pub fn load(path: &Path) -> Result<Config, ConfigError> { ... }
+"#;
 
 #[cfg(test)]
 mod tests {

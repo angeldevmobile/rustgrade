@@ -23,6 +23,10 @@ impl Rule for UndocumentedUnsafe {
         "`unsafe` block or impl without a `// SAFETY:` comment"
     }
 
+    fn explain(&self) -> &'static str {
+        EXPLAIN
+    }
+
     // Applies to test code too: unsound tests are still unsound.
     fn check(&self, ctx: &FileContext<'_>, out: &mut Vec<Finding>) {
         let lines: Vec<&str> = ctx.source.lines().collect();
@@ -115,6 +119,25 @@ fn has_safety_comment(lines: &[&str], line: usize, column: usize) -> bool {
         })
         .any(|l| l.contains("SAFETY:"))
 }
+
+const EXPLAIN: &str = r"Why: `unsafe` makes the author responsible for invariants the compiler can
+no longer check. A `// SAFETY:` comment states which invariant holds and why,
+so a reviewer can decide whether the block is sound. Without it, nobody can.
+
+Before:
+    fn first(v: &[u8]) -> u8 {
+        unsafe { *v.get_unchecked(0) }
+    }
+
+After:
+    fn first(v: &[u8]) -> Option<u8> {
+        if v.is_empty() {
+            return None;
+        }
+        // SAFETY: `v` is non-empty (checked above), so index 0 is in bounds.
+        Some(unsafe { *v.get_unchecked(0) })
+    }
+";
 
 #[cfg(test)]
 mod tests {

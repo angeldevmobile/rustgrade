@@ -21,6 +21,10 @@ impl Rule for CloneInLoop {
         "`.clone()` / `.to_owned()` inside a loop body"
     }
 
+    fn explain(&self) -> &'static str {
+        EXPLAIN
+    }
+
     // Syntax only: cannot tell a cheap `Arc` or `Copy` clone from a deep one.
     // `Arc::clone(&x)` is not flagged, which is the idiom for "this is cheap".
     fn check(&self, ctx: &FileContext<'_>, out: &mut Vec<Finding>) {
@@ -53,6 +57,22 @@ impl Rule for CloneInLoop {
         });
     }
 }
+
+const EXPLAIN: &str = r"Why: a `.clone()` or `.to_owned()` in a loop body copies data on every
+iteration, usually to satisfy the borrow checker. Borrowing, moving out of the
+source, or cloning once before the loop is almost always possible. For
+refcount bumps write `Arc::clone(&x)`, which is never flagged.
+
+Before:
+    for user in &users {
+        let name = user.name.clone();
+        index.insert(name, user.id);
+    }
+
+After:
+    let index: HashMap<&str, u64> =
+        users.iter().map(|u| (u.name.as_str(), u.id)).collect();
+";
 
 #[cfg(test)]
 mod tests {

@@ -1,0 +1,2 @@
+# LF everywhere, so rustfmt, snapshots and diffs agree across Windows and Unix.
+* text=auto eol=lf

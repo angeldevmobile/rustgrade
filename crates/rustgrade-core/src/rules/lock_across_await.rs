@@ -23,6 +23,10 @@ impl Rule for LockAcrossAwait {
         "Synchronous lock guard held across `.await`"
     }
 
+    fn explain(&self) -> &'static str {
+        EXPLAIN
+    }
+
     // Syntax only. A lock is "synchronous" when its `.lock()` / `.read()` /
     // `.write()` is not directly awaited: `m.lock().await` is tokio's async
     // mutex, built to be held across awaits; `m.lock().unwrap()` is std or
@@ -305,6 +309,22 @@ fn dropped_name(stmt: &syn::Stmt) -> Option<&syn::Ident> {
         _ => None,
     }
 }
+
+const EXPLAIN: &str = r"Why: a std or parking_lot guard held across `.await` blocks the executor
+thread while the task is suspended. Another task on that thread that wants the
+lock deadlocks the runtime. A lock temporary in a `match` / `if let` /
+`while let` scrutinee lives through the whole body, awaits included.
+`m.lock().await` (tokio's async mutex) is never flagged.
+
+Before:
+    let mut cache = state.cache.lock().unwrap();
+    let fresh = fetch(key).await?;
+    cache.insert(key.to_owned(), fresh);
+
+After:
+    let fresh = fetch(key).await?; // no guard held while awaiting
+    state.cache.lock().unwrap_or_else(PoisonError::into_inner).insert(key.to_owned(), fresh);
+";
 
 #[cfg(test)]
 mod tests {

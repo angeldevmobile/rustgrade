@@ -11,7 +11,7 @@ pub mod suppress;
 
 pub use config::Config;
 pub use finding::{Category, Finding, Severity, Span};
-pub use score::{Grade, Scorecard};
+pub use score::{Area, Cap, Grade, Scorecard};
 pub use suppress::Suppressed;
 
 use serde::Serialize;

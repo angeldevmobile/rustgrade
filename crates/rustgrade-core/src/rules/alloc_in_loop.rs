@@ -29,6 +29,10 @@ impl Rule for AllocInLoop {
         "Allocation (`Vec::new`, `String::from`, `format!`, `.to_string()`, ...) inside a loop body"
     }
 
+    fn explain(&self) -> &'static str {
+        EXPLAIN
+    }
+
     fn check(&self, ctx: &FileContext<'_>, out: &mut Vec<Finding>) {
         if is_test_path(ctx.path) {
             return;
@@ -92,6 +96,32 @@ fn allocation(expr: &syn::Expr) -> Option<(String, proc_macro2::Span)> {
         _ => None,
     }
 }
+
+const EXPLAIN: &str = r#"Why: `Vec::new`, `String::new`, `format!`, `.to_string()`, `vec![]` or
+`Box::new` in a loop body is a trip to the allocator on every iteration. Hoist
+the buffer and `.clear()` it, or write into an existing one. Values passed to
+`push` / `insert` / `send` are what is being stored and are not flagged.
+
+Before:
+    for order in orders {
+        let mut line = String::new();
+        for item in &order.items {
+            line.push_str(&format!("{item}, "));
+        }
+        emit(&line);
+    }
+
+After:
+    use std::fmt::Write;
+    let mut line = String::new();
+    for order in orders {
+        line.clear();
+        for item in &order.items {
+            let _ = write!(line, "{item}, "); // writing to a String cannot fail
+        }
+        emit(&line);
+    }
+"#;
 
 #[cfg(test)]
 mod tests {

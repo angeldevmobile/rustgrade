@@ -44,20 +44,34 @@ one crate is deleted and nothing else changes. A new protocol is one new adapter
 
 ## Quick start
 
+**Available now (v0.2):**
+
 ```bash
-cargo install rustgrade            # or: cargo binstall rustgrade
+# CLI (not on crates.io yet)
+cargo install --git https://github.com/angeldevmobile/rustgrade rustgrade
 
-rustgrade install --agent all      # detect installed agents and install the skill
 rustgrade scan                     # deterministic scan of the current crate
-rustgrade audit                    # scan + clippy + tests → A–F grade
+rustgrade scan --format json       # what agents read
+rustgrade rules --explain lock-across-await
 ```
 
-Inside an agent:
+Claude Code plugin (skill + commands), inside a Claude Code session:
 
 ```
-/audit            full graded review
-/hot-path <fn>    optimize a critical path, with a benchmark
+/plugin marketplace add angeldevmobile/rustgrade
+/plugin install rustgrade@rustgrade
 ```
+
+```
+/rustgrade:audit [path]       full graded review (scanner + clippy + tests → A–F)
+/rustgrade:hot-path <fn>      optimize a critical path, proven with a benchmark
+```
+
+Plugin commands are namespaced by Claude Code. Once `rustgrade install` copies
+them into a project's `.claude/commands/`, they are plain `/audit` and `/hot-path`.
+
+**Planned:** `cargo install rustgrade` from crates.io, `rustgrade install --agent all`
+(v0.3) and `rustgrade audit` (v0.4).
 
 ---
 
@@ -71,7 +85,7 @@ and others. The skill auto-activates when the agent writes or reviews Rust.
 
 The skill tells the agent to ground every review in the scanner:
 
-1. Run `rustgrade scan --format json` (or `audit` for a grade).
+1. Run `rustgrade scan --format json`.
 2. Read only the references matching the categories that came back.
 3. Use judgment for what a scanner can't see: design, API shape, whether a clone is
    actually justified.
@@ -79,25 +93,63 @@ The skill tells the agent to ground every review in the scanner:
 
 ### 2. CLI (`rustgrade`)
 
-Rust binary, no network, no LLM. It parses the crate with `syn`, runs rules, and
-merges results with `cargo clippy` and `cargo test`.
+Rust binary, no network, no LLM. It parses each file with `syn` and runs the rules;
+`audit` will merge the results with `cargo clippy` and `cargo test`.
 
-| Command | What it does |
-|---|---|
-| `rustgrade scan [path]` | Run the rule engine; prints findings by severity |
-| `rustgrade audit [path]` | `scan` + clippy pedantic + tests → category scores and A–F grade |
-| `rustgrade install --agent <name\|all>` | Install the skill and commands for one or every agent |
-| `rustgrade uninstall --agent <name\|all>` | Remove what `install` wrote (tracked in a manifest) |
-| `rustgrade doctor` | Show detected agents, installed versions, toolchain, clippy availability |
-| `rustgrade mcp` | Start the MCP server on stdio |
-| `rustgrade rules [--explain <id>]` | List rules, or explain one with before/after code |
-| `rustgrade init` | Write a `rustgrade.toml` with defaults for the current crate |
+| Command | What it does | Status |
+|---|---|---|
+| `rustgrade scan [path]` | Run the rule engine; prints findings by severity | ✅ |
+| `rustgrade rules [--explain <id>]` | List rules, or explain one with before/after code | ✅ |
+| `rustgrade audit [path]` | `scan` + clippy pedantic + tests → category scores and A–F grade | 🔜 v0.4 |
+| `rustgrade install --agent <name\|all>` | Install the skill and commands for one or every agent | 🔜 v0.3 |
+| `rustgrade uninstall --agent <name\|all>` | Remove what `install` wrote (tracked in a manifest) | 🔜 v0.3 |
+| `rustgrade doctor` | Show detected agents, installed versions, toolchain, clippy availability | 🔜 v0.3 |
+| `rustgrade init` | Write a `rustgrade.toml` with defaults for the current crate | 🔜 |
+| `rustgrade mcp` | Start the MCP server on stdio | 🔜 v0.6 |
 
-Global flags: `--format text|json|sarif|markdown`, `--min-severity`, `--fail-on <grade|severity>`,
-`--hot <glob>` (mark paths as hot so performance rules weigh more), `--scope project|user`
-for `install`.
+Flags today: `--format text|json` (`sarif|markdown` 🔜), `--min-severity <sev>`,
+`--fail-on <severity>`. Planned: `--fail-on <grade>`, `--hot <glob>`, `--scope project|user`.
 
-Exit codes: `0` passed, `1` findings above `--fail-on`, `2` tool error.
+Exit codes: `0` passed, `1` findings at or above `--fail-on`, `2` tool error.
+
+#### Rules
+
+| ID | Severity | Flags |
+|---|---|---|
+| `undocumented-unsafe` | critical | `unsafe` block or impl without a `// SAFETY:` comment |
+| `unwrap-outside-tests` | high (`expect`: medium) | `.unwrap()` / `.expect()` outside tests |
+| `lock-across-await` | high | std / parking_lot guard alive at an `.await` |
+| `unbounded-channel` | medium | `unbounded_channel()`, `unbounded()`, `std::sync::mpsc::channel()` |
+| `anyhow-in-lib-api` | medium | public library fn returning `anyhow` errors |
+| `clone-in-loop` | medium (high in hot paths) | `.clone()` / `.to_owned()` per iteration |
+| `alloc-in-loop` | medium (high in hot paths) | `Vec::new`, `format!`, `.to_string()`, ... per iteration |
+| `ref-owned-param` | low | `&String`, `&Vec<T>`, `&Box<T>`, `&PathBuf` parameters |
+
+The rules read syntax, not types, so they are heuristics: `clone-in-loop` can't tell a
+cheap `Arc` clone from a deep one, and macro bodies are not analyzed.
+`rustgrade rules --explain <id>` documents each rule's rationale and limits.
+
+#### Configuration and suppressions
+
+`rustgrade.toml` at the scan root:
+
+```toml
+allow = ["ref-owned-param"]      # disable rules project-wide
+exclude = ["generated/"]         # gitignore-style globs, on top of .gitignore
+hot = ["src/engine/"]            # performance findings here are raised to high
+min_severity = "low"
+```
+
+A single finding is silenced inline, with a mandatory reason:
+
+```rust
+// rustgrade: allow(unbounded-channel) shutdown signal, at most one message per worker
+let (stop_tx, stop_rx) = std::sync::mpsc::channel::<()>();
+```
+
+Suppressed findings stay in the JSON (`"suppressed"`, with their reason) so CI can
+audit them. Malformed or stale suppressions are reported as `invalid-suppression` /
+`unused-suppression`.
 
 ### 3. MCP server (`rustgrade mcp`, optional)
 
@@ -123,7 +175,7 @@ Without the flag, `install` only writes the skill and commands.
 
 | Agent | Skill | Commands | Uses CLI | MCP (optional) | Fallback when skills are unavailable |
 |---|---|---|---|---|---|
-| Claude Code | plugin + `skills/` | `/audit`, `/hot-path` | ✅ | ✅ | `CLAUDE.md` snippet |
+| Claude Code | plugin + `skills/` | `/rustgrade:audit`, `/rustgrade:hot-path` | ✅ | ✅ | `CLAUDE.md` snippet |
 | Cursor | `SKILL.md` | `.cursor/commands/` | ✅ | ✅ | `.cursor/rules/rustgrade.mdc` |
 | Codex CLI | `.codex/skills/` / `~/.codex/skills/` | prompts | ✅ | ✅ | `AGENTS.md` snippet |
 | Gemini CLI | extension | `.gemini/commands/*.toml` | ✅ | ✅ | `GEMINI.md` snippet |
@@ -141,36 +193,46 @@ inserted between `<!-- rustgrade:start -->` / `<!-- rustgrade:end -->` markers, 
 
 ## CI
 
+Today, fail the build on high or critical findings:
+
 ```yaml
 # .github/workflows/rustgrade.yml
 - uses: dtolnay/rust-toolchain@stable
-- run: cargo install rustgrade
+- run: cargo install --git https://github.com/angeldevmobile/rustgrade rustgrade
+- run: rustgrade scan --fail-on high
+```
+
+Planned (v0.4): a grade gate with SARIF upload, so findings appear as code-scanning
+annotations on the PR.
+
+```yaml
 - run: rustgrade audit --format sarif --fail-on D > rustgrade.sarif
 - uses: github/codeql-action/upload-sarif@v3
   with: { sarif_file: rustgrade.sarif }
 ```
 
-Findings appear as code-scanning annotations on the PR.
-
 ---
 
 ## Structure
 
-✅ ships in v0.1 · 🔜 planned
+✅ shipped · 🔜 planned
 
 ```
 rustgrade/
-├── Cargo.toml                    🔜 workspace
+├── Cargo.toml                    ✅ workspace
+├── rustgrade.toml                ✅ the repo's own scan config
 │
 ├── crates/
-│   ├── rustgrade-core/           🔜 rule engine (library, no I/O)
+│   ├── rustgrade-core/           ✅ rule engine (library, no I/O)
 │   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── finding.rs        🔜 Finding, Severity, Category, Span
-│   │       ├── score.rs          🔜 rubric weights, caps, letter grade
-│   │       ├── config.rs         🔜 rustgrade.toml (allow/deny, hot paths)
-│   │       └── rules/            🔜 one file per rule, each with tests
-│   │           ├── mod.rs        🔜 Rule trait + registry
+│   │       ├── lib.rs            ✅ scan API, versioned Report
+│   │       ├── finding.rs        ✅ Finding, Severity, Category, Span
+│   │       ├── score.rs          ✅ rubric weights, caps, letter grade
+│   │       ├── config.rs         ✅ rustgrade.toml (allow, exclude, hot paths)
+│   │       ├── suppress.rs       ✅ inline `rustgrade: allow(...)` comments
+│   │       └── rules/            ✅ one file per rule, each with tests
+│   │           ├── mod.rs        ✅ Rule trait + registry
+│   │           ├── common.rs     ✅ test-code detection, loop walker
 │   │           ├── clone_in_loop.rs
 │   │           ├── unwrap_outside_tests.rs
 │   │           ├── undocumented_unsafe.rs
@@ -180,13 +242,14 @@ rustgrade/
 │   │           ├── anyhow_in_lib_api.rs
 │   │           └── unbounded_channel.rs
 │   │
-│   ├── rustgrade-cli/            🔜 the `rustgrade` binary (clap)
-│   │   └── src/
-│   │       ├── main.rs
-│   │       ├── cmd/              🔜 scan, audit, install, uninstall, doctor, rules, init, mcp
-│   │       ├── output/           🔜 text, json, sarif, markdown renderers
-│   │       ├── cargo.rs          🔜 clippy/test runners, Cargo.toml metadata
-│   │       └── agents/           🔜 detection + installers driven by targets.toml
+│   ├── rustgrade-cli/            ✅ the `rustgrade` binary (clap)
+│   │   ├── src/
+│   │   │   ├── main.rs
+│   │   │   ├── cmd/              ✅ scan, rules · 🔜 audit, install, uninstall, doctor, init
+│   │   │   ├── output/           ✅ text, json · 🔜 sarif, markdown
+│   │   │   ├── cargo.rs          🔜 clippy/test runners, Cargo.toml metadata
+│   │   │   └── agents/           🔜 detection + installers driven by targets.toml
+│   │   └── tests/fixtures.rs     ✅ snapshot tests over evals/
 │   │
 │   └── rustgrade-mcp/            🔜 optional MCP adapter over stdio (rmcp), behind `--features mcp`
 │       └── src/
@@ -206,8 +269,8 @@ rustgrade/
 │       └── testing.md            🔜
 │
 ├── commands/                     agent-neutral command definitions
-│   ├── audit.md                  ✅ /audit
-│   ├── hot-path.md               ✅ /hot-path
+│   ├── audit.md                  ✅ /rustgrade:audit
+│   ├── hot-path.md               ✅ /rustgrade:hot-path
 │   ├── unsafe-review.md          🔜
 │   ├── errors.md                 🔜
 │   ├── concurrency.md            🔜
@@ -224,18 +287,19 @@ rustgrade/
 │
 ├── npm/                          🔜 optional `npx rustgrade` wrapper that downloads the binary
 │
-├── evals/                        🔜 proof that the plugin improves output
-│   ├── fixtures/                 🔜 small crates with known anti-patterns
+├── evals/                        proof that the plugin improves output
+│   ├── fixtures/                 ✅ small crates with known anti-patterns
 │   │   ├── clone-heavy/
+│   │   ├── lib-api/
 │   │   ├── unwrap-daemon/
 │   │   └── mutex-everywhere/
-│   └── expected/                 🔜 findings each fixture must produce (snapshot tests)
+│   └── expected/                 ✅ findings each fixture must produce (snapshot tests)
 │
 ├── examples/                     🔜 before/after diffs for README and launch post
-├── .github/workflows/            🔜 ci.yml, release.yml (cargo-dist binaries)
+├── .github/workflows/            ✅ ci.yml · 🔜 release.yml (cargo-dist binaries)
 ├── README.md                     ✅
-├── CHANGELOG.md                  🔜
-└── LICENSE                       🔜 MIT
+├── CHANGELOG.md                  ✅
+└── LICENSE                       ✅ MIT
 ```
 
 > In v0.1 the Claude packaging sits at the repo root as `.claude-plugin/`. It moves to
@@ -255,7 +319,9 @@ rustgrade/
   agents and CI depend on it the same way they would depend on an API.
 - **Measure, don't assert.** Every performance recommendation comes with a way to
   verify it (criterion, flamegraph, dhat, cargo asm).
-- **Honest grading.** Critical findings cap the grade; reports are never padded with nits.
+- **Honest grading.** High and critical findings cap the grade, and categories that
+  don't apply are left out instead of counting as perfect; reports are never padded
+  with nits.
 - **Safe installs.** Every file `install` writes is tracked, marker-delimited and
   reversible.
 
@@ -265,7 +331,8 @@ rustgrade/
 
 1. **v0.1:** skill, references, `/audit`, `/hot-path`, Claude Code plugin ✅
 2. **v0.2:** `rustgrade-core` with 8 rules, `rustgrade scan`, versioned JSON output,
-   skill updated to drive the CLI, eval fixtures
+   inline suppressions, `rules --explain`, skill updated to drive the CLI, eval
+   fixtures with snapshot tests ✅
 3. **v0.3:** `rustgrade install` for Claude Code, Cursor, Codex; `targets.toml`; `doctor`
 4. **v0.4:** `audit` with grading; SARIF + GitHub Action
 5. **v0.5:** Gemini CLI, Copilot, Windsurf targets; `/unsafe-review`, `/errors`

@@ -41,7 +41,7 @@ in the `rustgrade` scanner instead of vibes.
    | `concurrency` | [references/concurrency.md](references/concurrency.md) |
    | `unsafe` | [references/unsafe.md](references/unsafe.md) |
    | `ownership`, `api-design` | [references/ownership.md](references/ownership.md) |
-   | grading (`/audit`) | [references/rubric.md](references/rubric.md) |
+   | grading (`/rustgrade:audit`) | [references/rubric.md](references/rubric.md) |
 
 5. **Judgment pass**, for what a syntax scanner cannot see: API shape, error
    taxonomy, whether a clone is actually cheap (`Arc`, `Copy`), lock
@@ -83,8 +83,18 @@ Findings arrive sorted by severity, then location.
 | `ref-owned-param` | api-design | `&String`, `&Vec<T>`, `&Box<T>`, `&PathBuf` params |
 | `invalid-suppression`, `unused-suppression` | meta | malformed or stale `rustgrade: allow` comments |
 
-`rustgrade rules` lists them; `--min-severity` filters them; `--fail-on <severity>`
-exits `1` when any finding reaches that severity.
+`rustgrade rules` lists them. `rustgrade rules --explain <id>` prints a rule's
+rationale with before/after code (add `--format json` to parse it); use it
+before arguing with a finding. `--min-severity` filters findings;
+`--fail-on <severity>` exits `1` when any finding reaches that severity.
+
+## Commands
+
+Installed as a Claude Code plugin, the commands are namespaced:
+`/rustgrade:audit [path]` (graded review, see
+[references/rubric.md](references/rubric.md)) and
+`/rustgrade:hot-path <fn>` (benchmark-driven optimization). Installed into a
+project's `.claude/commands/`, they are `/audit` and `/hot-path`.
 
 ## Limitations: verify before you fix
 

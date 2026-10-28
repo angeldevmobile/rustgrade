@@ -44,6 +44,22 @@ pub enum Category {
     Meta,
 }
 
+impl Category {
+    /// Same spelling as the JSON output.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ownership => "ownership",
+            Self::Errors => "errors",
+            Self::Performance => "performance",
+            Self::Concurrency => "concurrency",
+            Self::Unsafe => "unsafe",
+            Self::ApiDesign => "api-design",
+            Self::Meta => "meta",
+        }
+    }
+}
+
 /// 1-based line and column, matching what editors and SARIF expect.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Span {

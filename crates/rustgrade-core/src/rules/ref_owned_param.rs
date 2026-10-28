@@ -32,6 +32,10 @@ impl Rule for RefOwnedParam {
         "Parameter takes `&String` / `&Vec<T>` / `&Box<T>` / `&PathBuf` instead of the borrowed form"
     }
 
+    fn explain(&self) -> &'static str {
+        EXPLAIN
+    }
+
     fn check(&self, ctx: &FileContext<'_>, out: &mut Vec<Finding>) {
         if is_test_path(ctx.path) {
             return;
@@ -120,6 +124,19 @@ impl<'ast> Visit<'ast> for Visitor<'_, '_> {
         visit::visit_trait_item_fn(self, f);
     }
 }
+
+const EXPLAIN: &str = r#"Why: `&String` forces every caller to own a `String`. `&str` accepts a
+`String` (by deref), a literal or a slice of a larger buffer. The same holds
+for `&Vec<T>` -> `&[T]`, `&Box<T>` -> `&T`, `&PathBuf` -> `&Path` and
+`&OsString` -> `&OsStr`. `&mut Vec<T>` / `&mut String` are fine: the callee
+may grow them. Trait impls are skipped; the trait fixes their signature.
+
+Before:
+    fn greet(name: &String) -> String { format!("hello {name}") }
+
+After:
+    fn greet(name: &str) -> String { format!("hello {name}") }
+"#;
 
 #[cfg(test)]
 mod tests {

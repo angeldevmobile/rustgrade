@@ -31,6 +31,8 @@ pub trait Rule: Sync {
     fn default_severity(&self) -> Severity;
     /// One-line description for `rustgrade rules`.
     fn summary(&self) -> &'static str;
+    /// Rationale plus before/after code, for `rustgrade rules --explain`.
+    fn explain(&self) -> &'static str;
     fn check(&self, ctx: &FileContext<'_>, out: &mut Vec<Finding>);
 }
 
@@ -117,6 +119,16 @@ mod tests {
                 "rule id {} is not kebab-case",
                 r.id()
             );
+        }
+    }
+
+    #[test]
+    fn every_rule_explains_itself_with_before_and_after() {
+        for r in registry() {
+            let text = r.explain();
+            for part in ["Why:", "Before:", "After:"] {
+                assert!(text.contains(part), "{} explain() lacks `{part}`", r.id());
+            }
         }
     }
 }

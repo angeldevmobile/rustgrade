@@ -23,6 +23,10 @@ impl Rule for UnwrapOutsideTests {
         "`.unwrap()` / `.expect()` outside tests"
     }
 
+    fn explain(&self) -> &'static str {
+        EXPLAIN
+    }
+
     // Known gap: syn does not parse macro bodies, so `println!("{}", x.unwrap())`
     // is not seen.
     fn check(&self, ctx: &FileContext<'_>, out: &mut Vec<Finding>) {
@@ -91,6 +95,18 @@ impl<'ast> Visit<'ast> for Visitor<'_, '_> {
         visit::visit_expr_method_call(self, call);
     }
 }
+
+const EXPLAIN: &str = r"Why: `.unwrap()` panics on the error path. In a request handler, daemon or
+library, one malformed input kills the thread or the process. `.expect()` is
+reported one level lower because its message documents an invariant, but it
+still panics. Tests, benches and examples are exempt.
+
+Before:
+    let (name, age) = req.split_once(':').unwrap();
+
+After:
+    let (name, age) = req.split_once(':').ok_or(RequestError::MissingSeparator)?;
+";
 
 #[cfg(test)]
 mod tests {

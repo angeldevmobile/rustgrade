@@ -34,6 +34,10 @@ impl Rule for UnboundedChannel {
         "Unbounded channel (`unbounded_channel()`, `unbounded()`, `std::sync::mpsc::channel()`) without backpressure"
     }
 
+    fn explain(&self) -> &'static str {
+        EXPLAIN
+    }
+
     fn check(&self, ctx: &FileContext<'_>, out: &mut Vec<Finding>) {
         if is_test_path(ctx.path) {
             return;
@@ -205,6 +209,20 @@ impl<'ast> Visit<'ast> for Visitor<'_, '_> {
         visit::visit_expr_call(self, call);
     }
 }
+
+const EXPLAIN: &str = r"Why: an unbounded channel turns a slow consumer into unbounded memory
+growth instead of backpressure. The producer never slows down and the process
+is OOM-killed later, far from the cause. `std::sync::mpsc::channel()` is
+unbounded too. If the message count is bounded by design (one shutdown signal
+per worker), suppress the finding with that reason.
+
+Before:
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
+After:
+    let (tx, rx) = tokio::sync::mpsc::channel(1024);
+    // a full channel makes the producer wait: tx.send(msg).await
+";
 
 #[cfg(test)]
 mod tests {

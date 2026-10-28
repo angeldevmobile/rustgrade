@@ -107,7 +107,7 @@ panic = "abort"     # if you never catch panics
 
 Measure each change; `opt-level = 3` is already the default.
 
-## `/hot-path` checklist
+## `/rustgrade:hot-path` checklist
 
 1. Write or find a criterion benchmark for the function; record the baseline.
 2. Profile (flamegraph / dhat) to find where time and allocations go.
