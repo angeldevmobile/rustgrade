@@ -1,6 +1,7 @@
 //! `rustgrade install` / `uninstall`: copy the skill and commands into agent
 //! directories, tracked in the manifest so every change is reversible.
 
+use std::borrow::Cow;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -74,7 +75,7 @@ fn install_agent(
     conflicts: &mut usize,
 ) -> anyhow::Result<Install> {
     header(out, agent, opts.scope, root)?;
-    let planned = agents::plan(agent, root);
+    let planned = agents::plan(agent, root, opts.scope);
     let mut records = Vec::new();
     for (path, contents) in &planned {
         let hash = content_hash(contents.as_bytes());
@@ -83,7 +84,8 @@ fn install_agent(
             if let Some(dir) = path.parent() {
                 fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
             }
-            fs::write(path, contents).with_context(|| format!("writing {}", path.display()))?;
+            fs::write(path, contents.as_bytes())
+                .with_context(|| format!("writing {}", path.display()))?;
         }
         let verb = match action {
             Action::Create => "created",
@@ -250,7 +252,7 @@ fn remove_stale(
     manifest: &Manifest,
     agent: &Agent,
     root: &Path,
-    planned: &[(PathBuf, &str)],
+    planned: &[(PathBuf, Cow<'static, str>)],
     opts: &Options<'_>,
 ) -> anyhow::Result<()> {
     let Some(prev) = manifest.find(&agent.id, root) else {

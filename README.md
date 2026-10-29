@@ -205,20 +205,29 @@ Without the flag, `install` only writes the skill and commands.
 
 ## Supported agents
 
-| Agent | `rustgrade install` writes | Commands | Status |
+| Agent (`--agent`) | Skill | `/audit`, `/hot-path` | Docs |
 |---|---|---|---|
-| Claude Code | `.claude/skills/rustgrade/` (or the plugin) | `/audit`, `/hot-path` in `.claude/commands/` (plugin: `/rustgrade:audit`) | ✅ |
-| Codex CLI | `.agents/skills/rustgrade/` | ask for an audit; the skill drives the CLI | ✅ |
-| Cursor | `.agents/skills/rustgrade/` | ask for an audit; the skill drives the CLI | ✅ |
-| Gemini CLI | extension | `.gemini/commands/*.toml` | 🔜 v0.5 |
-| GitHub Copilot (VS Code) | skills | `.github/prompts/` | 🔜 v0.5 |
-| Windsurf | rules | workflows | 🔜 v0.5 |
+| Claude Code (`claude`) | `.claude/skills/rustgrade/` | `.claude/commands/*.md` (plugin: `/rustgrade:audit`) | [skills](https://code.claude.com/docs/en/skills) |
+| Codex CLI (`codex`) | `.agents/skills/rustgrade/` | none: ask for "a rustgrade audit" | [skills](https://learn.chatgpt.com/docs/build-skills) |
+| Cursor (`cursor`) | `.agents/skills/rustgrade/` | `.cursor/commands/*.md` | [skills](https://cursor.com/docs/skills), [commands](https://docs.cursor.com/en/agent/chat/commands) |
+| Gemini CLI (`gemini`) | `.agents/skills/rustgrade/` | `.gemini/commands/*.toml` | [skills](https://geminicli.com/docs/cli/skills/), [commands](https://geminicli.com/docs/cli/custom-commands/) |
+| GitHub Copilot, VS Code (`copilot`) | `.agents/skills/rustgrade/` | `.github/prompts/*.prompt.md` (project scope only) | [skills](https://code.visualstudio.com/docs/agent-customization/agent-skills), [prompt files](https://code.visualstudio.com/docs/copilot/customization/prompt-files) |
+| Windsurf / Devin Desktop (`windsurf`) | `.agents/skills/rustgrade/` | `.devin/workflows/*.md` (user: `~/.codeium/windsurf/global_workflows/`) | [skills](https://docs.devin.ai/desktop/cascade/skills), [workflows](https://docs.devin.ai/desktop/cascade/workflows) |
 | Chat apps without a terminal | n/a | n/a | 🔜 MCP, v0.6 |
 
 Paths are relative to the project (`--scope project`, default) or the home directory
-(`--scope user`). Codex and Cursor both read `.agents/skills/`, so one copy serves
-both; Cursor also reads `.claude/skills/`, and `doctor` warns when it would see the
-skill twice.
+(`--scope user`). `.agents/skills/` is read by Codex, Cursor, Gemini CLI, Copilot and
+Windsurf, so one copy of the skill serves all five. Cursor also reads `.claude/skills/`,
+and `doctor` warns when it would see the skill twice.
+
+**One source, many formats.** Commands are written once, in `commands/*.md`, and
+`install` translates them: copied for Claude Code, TOML with `{{args}}` for Gemini CLI,
+a `.prompt.md` (agent mode) for Copilot, plain Markdown for Cursor and Windsurf. Where
+an agent has no argument placeholder, the command refers to "the argument the user
+typed after the command", which the agent appends to the prompt.
+
+Verified for each agent: the files land where its documentation says, in its format.
+Tested end to end in the agent itself: Claude Code. Reports for the others are welcome.
 
 Install paths live in one file, [`targets/targets.toml`](targets/targets.toml), with
 links to each agent's docs, so supporting a new agent or fixing a moved path doesn't
@@ -378,7 +387,7 @@ rustgrade/
    fixtures with snapshot tests ✅
 3. **v0.3:** `rustgrade install` for Claude Code, Cursor, Codex; `targets.toml`; `doctor` ✅
 4. **v0.4:** `audit` with grading ✅; SARIF + GitHub Action
-5. **v0.5:** Gemini CLI, Copilot, Windsurf targets; `/unsafe-review`, `/errors`
+5. **v0.5:** Gemini CLI, Copilot, Windsurf targets ✅; `/unsafe-review`, `/errors`
 6. **v0.6:** optional `rustgrade mcp` adapter (`--features mcp`) for terminal-less clients
 7. **v1.0:** stable rule IDs, JSON schema and rubric; published evals (skill-only vs
    skill + CLI vs MCP); cargo-dist releases; npm wrapper

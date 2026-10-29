@@ -77,7 +77,7 @@ fn write_status(out: &mut impl Write, agent: &Agent, inst: &Install) -> io::Resu
     // Shipped files that were never written (an existing file was kept), and
     // files written by an older rustgrade.
     let (mut blocked, mut outdated) = (0, 0);
-    for (path, contents) in agents::plan(agent, &inst.root) {
+    for (path, contents) in agents::plan(agent, &inst.root, inst.scope) {
         match inst.files.iter().find(|f| f.path == path) {
             None => blocked += 1,
             Some(f) if f.hash != content_hash(contents.as_bytes()) => outdated += 1,

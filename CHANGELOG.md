@@ -18,6 +18,13 @@ installed plugin when that version changes.
   per project or `--scope user`. Paths come from `targets/targets.toml`
   (Claude Code `.claude/`, Codex and Cursor `.agents/skills/`). `--dry-run`,
   `--force`, `--dir`.
+- Agents: Gemini CLI, GitHub Copilot (VS Code) and Windsurf / Devin Desktop,
+  next to Claude Code, Codex and Cursor. `.agents/skills/` serves the skill to
+  Codex, Cursor, Gemini, Copilot and Windsurf with one copy.
+- Commands are translated from `commands/*.md` into each agent's format:
+  Claude Code (as-is), Cursor and Windsurf (plain Markdown), Gemini CLI (TOML
+  with `{{args}}`), Copilot (`.prompt.md`, agent mode). Per-scope command
+  directories in `targets.toml` (`user_commands_dir`).
 - `rustgrade uninstall`: removes exactly what `install` wrote, tracked with
   hashes in `~/.rustgrade/manifest.json`; never touches files you created or
   edited, and keeps files another agent still uses.

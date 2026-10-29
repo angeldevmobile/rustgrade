@@ -179,3 +179,61 @@ fn user_scope_installs_under_home() {
     ]);
     assert_eq!(code, Some(2), "--dir is for project scope");
 }
+
+#[test]
+fn every_agent_gets_the_shared_skill_and_its_own_command_format() {
+    let sb = Sandbox::new(
+        "all",
+        &[
+            ".claude",
+            ".codex",
+            ".cursor",
+            ".gemini",
+            ".copilot",
+            ".codeium/windsurf",
+        ],
+    );
+    let (code, out) = sb.run(&["install", "--agent", "all"]);
+    assert_eq!(code, Some(0), "{out}");
+
+    // One skill copy serves Codex, Cursor, Gemini, Copilot and Windsurf.
+    assert!(exists(&sb.proj(".agents/skills/rustgrade/SKILL.md")));
+    assert!(exists(&sb.proj(".claude/skills/rustgrade/SKILL.md")));
+
+    let read = |rel: &str| fs::read_to_string(sb.proj(rel)).expect(rel);
+    assert!(read(".claude/commands/audit.md").contains("$ARGUMENTS"));
+    assert!(read(".cursor/commands/audit.md").starts_with("# "));
+    assert!(read(".devin/workflows/audit.md").starts_with("# "));
+    let gemini: toml::Table = toml::from_str(&read(".gemini/commands/audit.toml")).expect("TOML");
+    assert!(
+        gemini["prompt"]
+            .as_str()
+            .is_some_and(|p| p.contains("{{args}}"))
+    );
+    assert!(read(".github/prompts/audit.prompt.md").starts_with("---\ndescription: "));
+
+    // Uninstalling everything leaves no rustgrade file behind.
+    let (code, out) = sb.run(&["uninstall", "--agent", "all"]);
+    assert_eq!(code, Some(0), "{out}");
+    for rel in [
+        ".agents/skills/rustgrade",
+        ".gemini/commands/audit.toml",
+        ".github/prompts/audit.prompt.md",
+    ] {
+        assert!(!exists(&sb.proj(rel)), "{rel} removed");
+    }
+}
+
+#[test]
+fn user_scope_skips_commands_where_the_agent_keeps_them_elsewhere() {
+    let sb = Sandbox::new("user-copilot", &[".copilot"]);
+    let (code, out) = sb.run(&["install", "--agent", "copilot", "--scope", "user"]);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(exists(
+        &sb.base.join("home/.agents/skills/rustgrade/SKILL.md")
+    ));
+    assert!(
+        !out.contains("prompt.md"),
+        "Copilot user prompts live in VS Code's profile: {out}"
+    );
+}

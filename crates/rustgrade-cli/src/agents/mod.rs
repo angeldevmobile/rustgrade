@@ -2,14 +2,17 @@
 //! and the install manifest that makes installs reversible.
 
 mod assets;
+mod convert;
 pub mod manifest;
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 use assets::{COMMANDS, SKILL};
+use convert::{Command, Format};
 
 #[derive(Debug, Deserialize)]
 pub struct Agent {
@@ -19,9 +22,24 @@ pub struct Agent {
     pub detect: Vec<String>,
     /// Skill directory, relative to the install root.
     pub skill_dir: String,
-    /// Commands directory, relative to the install root, if the agent has one.
+    /// Commands directory for `--scope project`, if the agent has commands.
     #[serde(default)]
     pub commands_dir: Option<String>,
+    /// Commands directory for `--scope user`; `None`: no commands at user scope.
+    #[serde(default)]
+    pub user_commands_dir: Option<String>,
+    /// How `commands/*.md` is translated for this agent.
+    #[serde(default)]
+    pub commands_format: Format,
+}
+
+impl Agent {
+    pub fn commands_dir(&self, scope: Scope) -> Option<&str> {
+        match scope {
+            Scope::Project => self.commands_dir.as_deref(),
+            Scope::User => self.user_commands_dir.as_deref(),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -66,20 +84,21 @@ pub fn detected(agent: &Agent, home: &Path) -> bool {
     agent.detect.iter().any(|d| home.join(d).exists())
 }
 
-/// Every file to write for `agent` under `root`, with its contents.
-pub fn plan(agent: &Agent, root: &Path) -> Vec<(PathBuf, &'static str)> {
+/// Every file to write for `agent` under `root`, with its contents. Commands
+/// are translated to the agent's format.
+pub fn plan(agent: &Agent, root: &Path, scope: Scope) -> Vec<(PathBuf, Cow<'static, str>)> {
     let skill_dir = join_rel(root, &agent.skill_dir);
     let mut files: Vec<_> = SKILL
         .iter()
-        .map(|a| (join_rel(&skill_dir, a.path), a.contents))
+        .map(|a| (join_rel(&skill_dir, a.path), Cow::Borrowed(a.contents)))
         .collect();
-    if let Some(dir) = &agent.commands_dir {
+    if let Some(dir) = agent.commands_dir(scope) {
         let dir = join_rel(root, dir);
-        files.extend(
-            COMMANDS
-                .iter()
-                .map(|a| (join_rel(&dir, a.path), a.contents)),
-        );
+        files.extend(COMMANDS.iter().map(|a| {
+            let cmd = Command::parse(a.path, a.contents);
+            let name = convert::file_name(agent.commands_format, cmd.name);
+            (dir.join(name), convert::render(agent.commands_format, &cmd))
+        }));
     }
     files
 }
@@ -117,15 +136,44 @@ mod tests {
         assert!(ids.contains(&"claude") && ids.contains(&"codex") && ids.contains(&"cursor"));
     }
 
+    fn has_audit(files: &[(PathBuf, Cow<'static, str>)]) -> bool {
+        files.iter().any(|(p, _)| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("audit."))
+        })
+    }
+
     #[test]
-    fn only_agents_with_a_commands_dir_get_commands() {
+    fn commands_follow_each_agents_dir_and_scope() {
         let agents = targets().expect("valid targets.toml");
         let root = Path::new("proj");
         for a in &agents {
-            let files = plan(a, root);
-            let has_audit = files.iter().any(|(p, _)| p.ends_with("audit.md"));
-            assert_eq!(has_audit, a.commands_dir.is_some(), "{}", a.id);
-            assert!(files.iter().any(|(p, _)| p.ends_with("SKILL.md")));
+            for scope in [Scope::Project, Scope::User] {
+                let files = plan(a, root, scope);
+                assert_eq!(
+                    has_audit(&files),
+                    a.commands_dir(scope).is_some(),
+                    "{} {scope:?}",
+                    a.id
+                );
+                assert!(files.iter().any(|(p, _)| p.ends_with("SKILL.md")));
+            }
+            if a.commands_dir.is_some() {
+                assert!(
+                    a.commands_format != Format::Claude || a.id == "claude",
+                    "{} format",
+                    a.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_agent_but_claude_shares_the_agents_skill_dir() {
+        for a in targets().expect("valid targets.toml") {
+            let shared = a.skill_dir == ".agents/skills/rustgrade";
+            assert_eq!(shared, a.id != "claude", "{}", a.id);
         }
     }
 

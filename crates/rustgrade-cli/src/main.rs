@@ -113,8 +113,8 @@ impl From<SeverityArg> for Severity {
 /// Shared `install` / `uninstall` options.
 #[derive(clap::Args)]
 struct InstallTarget {
-    /// Agent from targets/targets.toml (claude, codex, cursor), or `all` for
-    /// every agent detected on this machine.
+    /// Agent from targets/targets.toml (claude, codex, cursor, gemini, copilot,
+    /// windsurf), or `all` for every agent detected on this machine.
     #[arg(long)]
     agent: String,
     #[arg(long, value_enum, default_value_t = agents::Scope::Project)]
