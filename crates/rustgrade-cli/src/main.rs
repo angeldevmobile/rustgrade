@@ -4,6 +4,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand, ValueEnum};
 use rustgrade_core::{Grade, Severity};
 
+mod agents;
 mod cargo;
 mod cmd;
 mod output;
@@ -50,17 +51,21 @@ enum Command {
         #[arg(long)]
         no_tests: bool,
     },
-    /// Install the skill and commands for one or every agent.
+    /// Install the skill (and commands, where supported) for one or every agent.
     Install {
+        #[command(flatten)]
+        target: InstallTarget,
+        /// Overwrite files that rustgrade did not write or that were edited.
         #[arg(long)]
-        agent: String,
-        #[arg(long)]
-        with_mcp: bool,
+        force: bool,
     },
-    /// Remove what `install` wrote.
+    /// Remove what `install` wrote (edited files are kept unless --force).
     Uninstall {
+        #[command(flatten)]
+        target: InstallTarget,
+        /// Also remove files edited since install.
         #[arg(long)]
-        agent: String,
+        force: bool,
     },
     /// Show detected agents, installed versions and toolchain.
     Doctor,
@@ -101,6 +106,35 @@ impl From<SeverityArg> for Severity {
             SeverityArg::Medium => Self::Medium,
             SeverityArg::High => Self::High,
             SeverityArg::Critical => Self::Critical,
+        }
+    }
+}
+
+/// Shared `install` / `uninstall` options.
+#[derive(clap::Args)]
+struct InstallTarget {
+    /// Agent from targets/targets.toml (claude, codex, cursor), or `all` for
+    /// every agent detected on this machine.
+    #[arg(long)]
+    agent: String,
+    #[arg(long, value_enum, default_value_t = agents::Scope::Project)]
+    scope: agents::Scope,
+    /// Project directory for `--scope project` (default: current directory).
+    #[arg(long)]
+    dir: Option<PathBuf>,
+    /// Show what would change without writing anything.
+    #[arg(long)]
+    dry_run: bool,
+}
+
+impl InstallTarget {
+    fn options(&self, force: bool) -> cmd::install::Options<'_> {
+        cmd::install::Options {
+            agent: &self.agent,
+            scope: self.scope,
+            dir: self.dir.as_deref(),
+            force,
+            dry_run: self.dry_run,
         }
     }
 }
@@ -164,9 +198,9 @@ fn main() -> ExitCode {
             },
             &globals,
         ),
-        Command::Install { .. } => cmd::not_yet("install"),
-        Command::Uninstall { .. } => cmd::not_yet("uninstall"),
-        Command::Doctor => cmd::not_yet("doctor"),
+        Command::Install { target, force } => cmd::install::install(&target.options(force)),
+        Command::Uninstall { target, force } => cmd::install::uninstall(&target.options(force)),
+        Command::Doctor => cmd::doctor::run(),
         Command::Init => cmd::not_yet("init"),
         #[cfg(feature = "mcp")]
         Command::Mcp => rustgrade_mcp::serve_stdio().map(|()| EXIT_OK),

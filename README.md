@@ -68,11 +68,18 @@ Claude Code plugin (skill + commands), inside a Claude Code session:
 /rustgrade:hot-path <fn>      optimize a critical path, proven with a benchmark
 ```
 
-Plugin commands are namespaced by Claude Code. Once `rustgrade install` copies
-them into a project's `.claude/commands/`, they are plain `/audit` and `/hot-path`.
+Plugin commands are namespaced by Claude Code. Without the plugin, the CLI installs
+the same files into each agent's own directories, where the Claude Code commands are
+plain `/audit` and `/hot-path`:
 
-**Planned:** `cargo install rustgrade` from crates.io and `rustgrade install --agent all`
-(v0.3).
+```bash
+rustgrade install --agent all          # every agent detected, in this project
+rustgrade install --agent claude --scope user   # or for all your projects
+rustgrade doctor                       # toolchain, agents, install status
+rustgrade uninstall --agent all        # remove exactly what install wrote
+```
+
+**Planned:** `cargo install rustgrade` from crates.io.
 
 ---
 
@@ -102,16 +109,17 @@ Rust binary, no network, no LLM. It parses each file with `syn` and runs the rul
 | `rustgrade scan [path]` | Run the rule engine; prints findings by severity | ✅ |
 | `rustgrade rules [--explain <id>]` | List rules, or explain one with before/after code | ✅ |
 | `rustgrade audit [path]` | `scan` + clippy pedantic + tests → category scores and A–F grade | ✅ |
-| `rustgrade install --agent <name\|all>` | Install the skill and commands for one or every agent | 🔜 v0.3 |
-| `rustgrade uninstall --agent <name\|all>` | Remove what `install` wrote (tracked in a manifest) | 🔜 v0.3 |
-| `rustgrade doctor` | Show detected agents, installed versions, toolchain, clippy availability | 🔜 v0.3 |
+| `rustgrade install --agent <name\|all>` | Install the skill and commands for one or every agent | ✅ |
+| `rustgrade uninstall --agent <name\|all>` | Remove what `install` wrote (tracked in a manifest) | ✅ |
+| `rustgrade doctor` | Show detected agents, install status, toolchain, clippy availability | ✅ |
 | `rustgrade init` | Write a `rustgrade.toml` with defaults for the current crate | 🔜 |
 | `rustgrade mcp` | Start the MCP server on stdio | 🔜 v0.6 |
 
 Flags today: `--format text|json` (`sarif|markdown` 🔜), `--min-severity <sev>`,
 `--fail-on <severity>` (any command) or `--fail-on <grade>` (`audit`: fails on that
-grade or worse), `audit --no-clippy --no-tests`. Planned: `--hot <glob>`,
-`--scope project|user`.
+grade or worse), `audit --no-clippy --no-tests`,
+`install`/`uninstall --scope project|user --dir <path> --dry-run --force`.
+Planned: `--hot <glob>`.
 
 Exit codes: `0` passed, `1` threshold reached (`--fail-on`), `2` tool error.
 
@@ -197,21 +205,29 @@ Without the flag, `install` only writes the skill and commands.
 
 ## Supported agents
 
-| Agent | Skill | Commands | Uses CLI | MCP (optional) | Fallback when skills are unavailable |
-|---|---|---|---|---|---|
-| Claude Code | plugin + `skills/` | `/rustgrade:audit`, `/rustgrade:hot-path` | ✅ | ✅ | `CLAUDE.md` snippet |
-| Cursor | `SKILL.md` | `.cursor/commands/` | ✅ | ✅ | `.cursor/rules/rustgrade.mdc` |
-| Codex CLI | `.codex/skills/` / `~/.codex/skills/` | prompts | ✅ | ✅ | `AGENTS.md` snippet |
-| Gemini CLI | extension | `.gemini/commands/*.toml` | ✅ | ✅ | `GEMINI.md` snippet |
-| GitHub Copilot (VS Code) | skills | `.github/prompts/` | ✅ | ✅ | `.github/copilot-instructions.md` |
-| Windsurf | rules | workflows | ✅ | ✅ | `.windsurf/rules/rustgrade.md` |
-| Any AGENTS.md tool | n/a | n/a | ✅ if it has a shell | if supported | `AGENTS.md` snippet |
-| Chat apps without a terminal | n/a | n/a | ❌ | ✅ primary path | n/a |
+| Agent | `rustgrade install` writes | Commands | Status |
+|---|---|---|---|
+| Claude Code | `.claude/skills/rustgrade/` (or the plugin) | `/audit`, `/hot-path` in `.claude/commands/` (plugin: `/rustgrade:audit`) | ✅ |
+| Codex CLI | `.agents/skills/rustgrade/` | ask for an audit; the skill drives the CLI | ✅ |
+| Cursor | `.agents/skills/rustgrade/` | ask for an audit; the skill drives the CLI | ✅ |
+| Gemini CLI | extension | `.gemini/commands/*.toml` | 🔜 v0.5 |
+| GitHub Copilot (VS Code) | skills | `.github/prompts/` | 🔜 v0.5 |
+| Windsurf | rules | workflows | 🔜 v0.5 |
+| Chat apps without a terminal | n/a | n/a | 🔜 MCP, v0.6 |
 
-Install paths live in one file, `targets/targets.toml`, so supporting a new agent or
-fixing a changed path doesn't require touching Rust code. Fallback snippets are
-inserted between `<!-- rustgrade:start -->` / `<!-- rustgrade:end -->` markers, so
-`uninstall` and upgrades never clobber the user's own instructions.
+Paths are relative to the project (`--scope project`, default) or the home directory
+(`--scope user`). Codex and Cursor both read `.agents/skills/`, so one copy serves
+both; Cursor also reads `.claude/skills/`, and `doctor` warns when it would see the
+skill twice.
+
+Install paths live in one file, [`targets/targets.toml`](targets/targets.toml), with
+links to each agent's docs, so supporting a new agent or fixing a moved path doesn't
+touch Rust code.
+
+**Safe installs.** Every file written is recorded with its hash in
+`~/.rustgrade/manifest.json`. `install` never overwrites a file it didn't write or that
+you edited, and `uninstall` removes only its own unedited files (both take `--force`),
+keeping files another agent still uses.
 
 ---
 
@@ -304,7 +320,7 @@ rustgrade/
 │   └── api.md                    🔜
 │
 ├── targets/                      per-agent packaging, generated or templated
-│   ├── targets.toml              🔜 install paths, formats, MCP config locations
+│   ├── targets.toml              ✅ install paths per agent, with doc links
 │   ├── claude/                   ✅ .claude-plugin/ (plugin.json, marketplace.json)
 │   ├── cursor/                   🔜 rustgrade.mdc template, command wrappers
 │   ├── codex/                    🔜 AGENTS.md snippet
@@ -360,7 +376,7 @@ rustgrade/
 2. **v0.2:** `rustgrade-core` with 8 rules, `rustgrade scan`, versioned JSON output,
    inline suppressions, `rules --explain`, skill updated to drive the CLI, eval
    fixtures with snapshot tests ✅
-3. **v0.3:** `rustgrade install` for Claude Code, Cursor, Codex; `targets.toml`; `doctor`
+3. **v0.3:** `rustgrade install` for Claude Code, Cursor, Codex; `targets.toml`; `doctor` ✅
 4. **v0.4:** `audit` with grading ✅; SARIF + GitHub Action
 5. **v0.5:** Gemini CLI, Copilot, Windsurf targets; `/unsafe-review`, `/errors`
 6. **v0.6:** optional `rustgrade mcp` adapter (`--features mcp`) for terminal-less clients

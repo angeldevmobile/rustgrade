@@ -117,7 +117,8 @@ The scanner reads syntax (`syn`), not types:
 - `anyhow-in-lib-api` decides lib vs bin from the layout (`src/lib.rs`,
   `src/main.rs`, `src/bin/`).
 - Loop rules don't count closures passed to iterator adapters
-  (`.map(|x| x.clone())`).
+  (`.map(|x| x.clone())`), and look at one function at a time: a function that
+  allocates, called from a loop, is not flagged at the call site.
 
 A false positive is fixed with a suppression, never by contorting correct code.
 

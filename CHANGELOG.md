@@ -13,6 +13,16 @@ installed plugin when that version changes.
 
 ### Added
 
+- `rustgrade install --agent <claude|codex|cursor|all>`: writes the skill (and,
+  for Claude Code, `/audit` and `/hot-path`) into each agent's directories,
+  per project or `--scope user`. Paths come from `targets/targets.toml`
+  (Claude Code `.claude/`, Codex and Cursor `.agents/skills/`). `--dry-run`,
+  `--force`, `--dir`.
+- `rustgrade uninstall`: removes exactly what `install` wrote, tracked with
+  hashes in `~/.rustgrade/manifest.json`; never touches files you created or
+  edited, and keeps files another agent still uses.
+- `rustgrade doctor`: cargo and clippy versions, detected agents, and each
+  install's status (up to date, outdated, edited, missing).
 - `rustgrade audit [path]`: scanner + `cargo clippy` (pedantic) + `cargo test`,
   graded A–F with the rubric. Areas the code doesn't use (unsafe,
   concurrency) are detected and left out of the average; a crate that does not

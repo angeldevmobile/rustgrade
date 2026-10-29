@@ -1,0 +1,37 @@
+# Where each coding agent reads the rustgrade skill and commands.
+# `rustgrade install` embeds this file at build time; adding an agent or fixing
+# a moved path needs no Rust changes.
+#
+# Paths are relative to the install root: the project directory with
+# `--scope project` (default) or the home directory with `--scope user`.
+# `detect` paths are relative to the home directory: the agent counts as
+# installed if any of them exists (used by `--agent all` and `doctor`).
+#
+# Sources, checked 2026-10-28:
+#   Claude Code  https://code.claude.com/docs/en/skills
+#                skills in .claude/skills/<name>/; .claude/commands/*.md still
+#                works and gives plain /audit and /hot-path.
+#   Codex CLI    https://learn.chatgpt.com/docs/build-skills
+#                skills in .agents/skills/ (repo) and ~/.agents/skills/ (user).
+#   Cursor       https://cursor.com/docs/skills
+#                skills in .agents/skills/ or .cursor/skills/; it also reads
+#                .claude/skills/ for compatibility.
+
+[[agent]]
+id = "claude"
+name = "Claude Code"
+detect = [".claude"]
+skill_dir = ".claude/skills/rustgrade"
+commands_dir = ".claude/commands"
+
+[[agent]]
+id = "codex"
+name = "Codex CLI"
+detect = [".codex"]
+skill_dir = ".agents/skills/rustgrade"
+
+[[agent]]
+id = "cursor"
+name = "Cursor"
+detect = [".cursor"]
+skill_dir = ".agents/skills/rustgrade"
