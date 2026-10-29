@@ -29,11 +29,16 @@ pub fn run() -> anyhow::Result<u8> {
     )?;
 
     writeln!(out, "\nAgents (home: {})", home.display())?;
+    let width = all
+        .iter()
+        .map(|a| a.name.chars().count())
+        .max()
+        .unwrap_or(0);
     for agent in &all {
         let detected = agents::detected(agent, &home);
         writeln!(
             out,
-            "  {:<12} {}",
+            "  {:<width$}  {}",
             agent.name,
             if detected { "detected" } else { "not detected" }
         )?;

@@ -140,8 +140,17 @@ fn codex_and_cursor_share_the_agents_skill_dir() {
         "claude not detected, not installed"
     );
 
-    sb.run(&["uninstall", "--agent", "codex"]);
+    assert!(
+        out.contains("shared    .agents/skills/rustgrade/ (7 files, with Codex CLI)"),
+        "the shared skill is one line: {out}"
+    );
+
+    let (_, out) = sb.run(&["uninstall", "--agent", "codex"]);
     assert!(exists(&skill), "still needed by cursor");
+    assert!(
+        out.contains("kept      .agents/skills/rustgrade/ (7 files, still used by Cursor)"),
+        "{out}"
+    );
     sb.run(&["uninstall", "--agent", "cursor"]);
     assert!(!exists(&skill), "removed with its last owner");
 }

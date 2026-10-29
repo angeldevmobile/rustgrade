@@ -42,7 +42,15 @@ pub fn install(opts: &Options<'_>) -> anyhow::Result<u8> {
     let mut conflicts = 0;
 
     for agent in chosen {
-        let install = install_agent(&mut out, agent, &root, &manifest, opts, &mut conflicts)?;
+        let install = install_agent(
+            &mut out,
+            agent,
+            &all,
+            &root,
+            &manifest,
+            opts,
+            &mut conflicts,
+        )?;
         manifest.upsert(install);
     }
 
@@ -69,6 +77,7 @@ pub fn install(opts: &Options<'_>) -> anyhow::Result<u8> {
 fn install_agent(
     out: &mut impl Write,
     agent: &Agent,
+    all: &[Agent],
     root: &Path,
     manifest: &Manifest,
     opts: &Options<'_>,
@@ -76,7 +85,11 @@ fn install_agent(
 ) -> anyhow::Result<Install> {
     header(out, agent, opts.scope, root)?;
     let planned = agents::plan(agent, root, opts.scope);
+    let skill_dir = agents::join_rel(root, &agent.skill_dir);
     let mut records = Vec::new();
+
+    // Decide and write first, so an untouched skill can be reported in one line.
+    let mut decided = Vec::with_capacity(planned.len());
     for (path, contents) in &planned {
         let hash = content_hash(contents.as_bytes());
         let action = decide(path, &hash, manifest, opts.force)?;
@@ -86,6 +99,34 @@ fn install_agent(
             }
             fs::write(path, contents.as_bytes())
                 .with_context(|| format!("writing {}", path.display()))?;
+        }
+        decided.push((path, hash, action));
+    }
+    let skill_untouched = decided
+        .iter()
+        .filter(|(p, ..)| p.starts_with(&skill_dir))
+        .all(|(.., a)| *a == Action::Unchanged);
+    if skill_untouched {
+        let n = decided
+            .iter()
+            .filter(|(p, ..)| p.starts_with(&skill_dir))
+            .count();
+        let others = owners(manifest, all, root, &agent.id, &skill_dir);
+        let verb = if others.is_empty() {
+            "unchanged"
+        } else {
+            "shared"
+        };
+        write_dir_summary(out, verb, &skill_dir, root, n, "with", &others)?;
+    }
+
+    for (path, hash, action) in decided {
+        if skill_untouched && path.starts_with(&skill_dir) {
+            records.push(FileRecord {
+                path: path.clone(),
+                hash,
+            });
+            continue;
         }
         let verb = match action {
             Action::Create => "created",
@@ -143,11 +184,39 @@ pub fn uninstall(opts: &Options<'_>) -> anyhow::Result<u8> {
 
     let mut kept = 0;
     for inst in &installs {
-        match all.iter().find(|a| a.id == inst.agent) {
+        let agent = all.iter().find(|a| a.id == inst.agent);
+        match agent {
             Some(agent) => header(&mut out, agent, inst.scope, &root)?,
             None => writeln!(out, "{} ({})", inst.agent, root.display())?,
         }
+        // A skill another agent still uses is kept whole; say so in one line.
+        let shared_skill = agent
+            .map(|a| agents::join_rel(&root, &a.skill_dir))
+            .filter(|dir| {
+                let mut in_dir = inst
+                    .files
+                    .iter()
+                    .filter(|f| f.path.starts_with(dir))
+                    .peekable();
+                in_dir.peek().is_some()
+                    && in_dir.all(|f| manifest.shared_with_others(&f.path, &inst.agent, &root))
+            });
+        if let Some(dir) = &shared_skill {
+            let n = inst
+                .files
+                .iter()
+                .filter(|f| f.path.starts_with(dir))
+                .count();
+            let others = owners(&manifest, &all, &root, &inst.agent, dir);
+            write_dir_summary(&mut out, "kept", dir, &root, n, "still used by", &others)?;
+        }
         for f in &inst.files {
+            if shared_skill
+                .as_ref()
+                .is_some_and(|dir| f.path.starts_with(dir))
+            {
+                continue;
+            }
             if manifest.shared_with_others(&f.path, &inst.agent, &root) {
                 write_entry(&mut out, "kept", &f.path, &root)?;
                 writeln!(out, "  (also installed for another agent)")?;
@@ -271,6 +340,46 @@ fn remove_stale(
         }
     }
     Ok(())
+}
+
+/// Names of the other agents installed at `root` with files under `dir`.
+fn owners<'a>(
+    manifest: &Manifest,
+    all: &'a [Agent],
+    root: &Path,
+    except: &str,
+    dir: &Path,
+) -> Vec<&'a str> {
+    all.iter()
+        .filter(|a| a.id != except)
+        .filter(|a| {
+            manifest
+                .find(&a.id, root)
+                .is_some_and(|i| i.files.iter().any(|f| f.path.starts_with(dir)))
+        })
+        .map(|a| a.name.as_str())
+        .collect()
+}
+
+/// "  shared    .agents/skills/rustgrade/ (7 files, with Codex CLI, Cursor)".
+fn write_dir_summary(
+    out: &mut impl Write,
+    verb: &str,
+    dir: &Path,
+    root: &Path,
+    files: usize,
+    relation: &str,
+    others: &[&str],
+) -> io::Result<()> {
+    write_entry(out, verb, dir, root)?;
+    write!(out, "/ ({files} files")?;
+    if let Some((first, rest)) = others.split_first() {
+        write!(out, ", {relation} {first}")?;
+        for name in rest {
+            write!(out, ", {name}")?;
+        }
+    }
+    writeln!(out, ")")
 }
 
 /// After removing `file`, removes its parent directories while they are empty,
