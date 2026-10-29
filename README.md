@@ -227,7 +227,9 @@ an agent has no argument placeholder, the command refers to "the argument the us
 typed after the command", which the agent appends to the prompt.
 
 Verified for each agent: the files land where its documentation says, in its format.
-Tested end to end in the agent itself: Claude Code. Reports for the others are welcome.
+Tested end to end in the agent itself: Claude Code (plugin and `.claude/`) and GitHub
+Copilot in VS Code, both reporting the same `B (89)` that `rustgrade audit` gives on
+`evals/fixtures/unwrap-daemon`. Reports for the others are welcome.
 
 Install paths live in one file, [`targets/targets.toml`](targets/targets.toml), with
 links to each agent's docs, so supporting a new agent or fixing a moved path doesn't
