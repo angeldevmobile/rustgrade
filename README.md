@@ -299,11 +299,11 @@ rustgrade/
 │   ├── rustgrade-cli/            ✅ the `rustgrade` binary (clap)
 │   │   ├── src/
 │   │   │   ├── main.rs
-│   │   │   ├── cmd/              ✅ scan, audit, rules · 🔜 install, uninstall, doctor, init
+│   │   │   ├── cmd/              ✅ scan, audit, rules, install, uninstall, doctor · 🔜 init
 │   │   │   ├── output/           ✅ text, json · 🔜 sarif, markdown
 │   │   │   ├── cargo.rs          ✅ clippy/test runners and output parsers
-│   │   │   └── agents/           🔜 detection + installers driven by targets.toml
-│   │   └── tests/                ✅ fixture snapshots, audit end to end
+│   │   │   └── agents/           ✅ targets, embedded skill, command translation, manifest
+│   │   └── tests/                ✅ fixture snapshots, audit and install end to end
 │   │
 │   └── rustgrade-mcp/            🔜 optional MCP adapter over stdio (rmcp), behind `--features mcp`
 │       └── src/
@@ -322,22 +322,17 @@ rustgrade/
 │       ├── api-design.md         🔜
 │       └── testing.md            🔜
 │
-├── commands/                     agent-neutral command definitions
-│   ├── audit.md                  ✅ /rustgrade:audit
-│   ├── hot-path.md               ✅ /rustgrade:hot-path
+├── commands/                     written once, translated per agent by `install`
+│   ├── audit.md                  ✅ /audit (plugin: /rustgrade:audit)
+│   ├── hot-path.md               ✅ /hot-path
 │   ├── unsafe-review.md          🔜
 │   ├── errors.md                 🔜
 │   ├── concurrency.md            🔜
 │   └── api.md                    🔜
 │
-├── targets/                      per-agent packaging, generated or templated
-│   ├── targets.toml              ✅ install paths per agent, with doc links
-│   ├── claude/                   ✅ .claude-plugin/ (plugin.json, marketplace.json)
-│   ├── cursor/                   🔜 rustgrade.mdc template, command wrappers
-│   ├── codex/                    🔜 AGENTS.md snippet
-│   ├── gemini/                   🔜 gemini-extension.json, commands/*.toml
-│   ├── copilot/                  🔜 copilot-instructions snippet, *.prompt.md
-│   └── windsurf/                 🔜 rules + workflows
+├── targets/
+│   └── targets.toml              ✅ paths and command format per agent, with doc links
+├── .claude-plugin/               ✅ plugin.json, marketplace.json (Claude Code plugin)
 │
 ├── npm/                          🔜 optional `npx rustgrade` wrapper that downloads the binary
 │
@@ -356,8 +351,11 @@ rustgrade/
 └── LICENSE                       ✅ MIT
 ```
 
-> In v0.1 the Claude packaging sits at the repo root as `.claude-plugin/`. It moves to
-> `targets/claude/` once the CLI generates it.
+> Per-agent folders under `targets/` (Cursor rules, Gemini extension, Copilot and
+> Windsurf snippets) were planned; they turned out unnecessary. Every supported agent
+> now reads `SKILL.md` directly, and `install` translates `commands/*.md` into each
+> agent's command format from `targets.toml`. `.claude-plugin/` stays at the repo root,
+> where `/plugin marketplace add angeldevmobile/rustgrade` looks for it.
 
 ### Design principles
 
