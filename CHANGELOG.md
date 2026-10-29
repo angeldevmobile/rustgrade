@@ -5,6 +5,10 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/). Until 1.0, the JSON schema, rule IDs
 and rubric may change between minor versions; each change is listed here.
 
+The Claude Code plugin's version (`.claude-plugin/plugin.json`) is bumped on
+every change to `skills/` or `commands/`: Claude Code only updates an
+installed plugin when that version changes.
+
 ## [Unreleased] - 0.2.0
 
 ### Added

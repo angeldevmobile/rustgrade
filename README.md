@@ -47,8 +47,8 @@ one crate is deleted and nothing else changes. A new protocol is one new adapter
 **Available now (v0.2):**
 
 ```bash
-# CLI (not on crates.io yet)
-cargo install --git https://github.com/angeldevmobile/rustgrade rustgrade
+# CLI (not on crates.io yet; --locked uses the dependency versions CI tested)
+cargo install --locked --git https://github.com/angeldevmobile/rustgrade rustgrade
 
 rustgrade scan                     # deterministic scan of the current crate
 rustgrade scan --format json       # what agents read
@@ -223,7 +223,7 @@ Gate on the grade (fails on C or worse):
 # .github/workflows/rustgrade.yml
 - uses: dtolnay/rust-toolchain@stable
   with: { components: clippy }
-- run: cargo install --git https://github.com/angeldevmobile/rustgrade rustgrade
+- run: cargo install --locked --git https://github.com/angeldevmobile/rustgrade rustgrade
 - run: rustgrade audit --fail-on C
 ```
 

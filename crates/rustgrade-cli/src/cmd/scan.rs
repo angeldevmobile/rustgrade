@@ -29,6 +29,7 @@ pub fn run(path: Option<&Path>, globals: &Globals) -> anyhow::Result<u8> {
 /// Scans every Rust file under `root` with its `rustgrade.toml`. Files that
 /// fail to parse are reported on stderr and skipped.
 pub fn build_report(root: &Path, min_severity: Option<Severity>) -> anyhow::Result<Report> {
+    ensure_exists(root)?;
     let mut config = load_config(root)?;
     if let Some(min) = min_severity {
         config.min_severity = min;
@@ -57,6 +58,21 @@ pub fn build_report(root: &Path, min_severity: Option<Severity>) -> anyhow::Resu
         eprintln!("warning: {e}");
     }
     Ok(report)
+}
+
+/// A clear error for a mistyped path, instead of a walker or manifest error.
+pub fn ensure_exists(path: &Path) -> anyhow::Result<()> {
+    if path.exists() {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "{} does not exist (relative paths start at {})",
+        path.display(),
+        std::env::current_dir().map_or_else(
+            |_| "the current directory".into(),
+            |d| d.display().to_string()
+        )
+    )
 }
 
 fn load_config(root: &Path) -> anyhow::Result<Config> {

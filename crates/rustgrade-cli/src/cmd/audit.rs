@@ -39,6 +39,7 @@ pub fn run(path: Option<&Path>, opts: &Options, globals: &Globals) -> anyhow::Re
         }
     };
     let root = path.unwrap_or(Path::new("."));
+    scan::ensure_exists(root)?;
     let manifest = root.join("Cargo.toml");
     if !manifest.is_file() {
         anyhow::bail!(

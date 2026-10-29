@@ -7,7 +7,7 @@
     {
       "name": "rustgrade",
       "source": "./",
-      "description": "Systems-level Rust review: /audit, /hot-path and a skill that drives the rustgrade CLI."
+      "description": "Systems-level Rust review: /rustgrade:audit (graded A-F), /rustgrade:hot-path and a skill that drives the rustgrade CLI."
     }
   ]
 }

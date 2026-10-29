@@ -1,6 +1,6 @@
 {
   "name": "rustgrade",
-  "version": "0.2.0-dev",
+  "version": "0.2.0-dev.2",
   "description": "Systems-level Rust review for coding agents: senior defaults for ownership, errors, unsafe, concurrency and performance, grounded in the rustgrade CLI scanner.",
   "author": {
     "name": "angeldevmobile"

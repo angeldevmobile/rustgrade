@@ -124,3 +124,13 @@ fn audit_needs_a_cargo_manifest() {
     assert_eq!(out.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&out.stderr).contains("no Cargo.toml"));
 }
+
+#[test]
+fn a_missing_path_says_so() {
+    for cmd in ["audit", "scan"] {
+        let out = rustgrade(&[cmd, "no/such/dir"]);
+        assert_eq!(out.status.code(), Some(2), "{cmd}");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains("does not exist"), "{cmd}: {err}");
+    }
+}
