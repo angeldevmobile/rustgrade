@@ -174,7 +174,7 @@ mod tests {
                 println!("{}", 1);
             }
         }"#;
-        assert!(messages(src).is_empty());
+        assert_eq!(messages(src), Vec::<String>::new());
     }
 
     #[test]

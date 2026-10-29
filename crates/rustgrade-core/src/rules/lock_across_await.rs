@@ -376,7 +376,7 @@ mod tests {
             x.await;
             match m.lock().await.get(&k) { Some(v) => send(v).await, None => {} }
         }";
-        assert!(messages(src).is_empty());
+        assert_eq!(messages(src), Vec::<String>::new());
     }
 
     #[test]
@@ -450,6 +450,6 @@ mod tests {
             async fn t() { let g = m.lock().unwrap(); x.await; }
             async fn io(mut f: File) { let n = f.read(&mut buf); x.await; }
         ";
-        assert!(messages(src).is_empty());
+        assert_eq!(messages(src), Vec::<String>::new());
     }
 }

@@ -171,7 +171,7 @@ mod tests {
     fn accepts_borrowed_forms_owned_values_and_mut_refs() {
         let src =
             "fn f(a: &str, b: &[u8], c: String, d: Vec<u8>, e: &mut Vec<u8>, g: &mut String) {}";
-        assert!(messages(src).is_empty());
+        assert_eq!(messages(src), Vec::<String>::new());
     }
 
     #[test]
@@ -189,6 +189,9 @@ mod tests {
 
     #[test]
     fn ignores_test_code() {
-        assert!(messages("#[cfg(test)] mod t { fn h(s: &String) {} }").is_empty());
+        assert_eq!(
+            messages("#[cfg(test)] mod t { fn h(s: &String) {} }"),
+            Vec::<String>::new()
+        );
     }
 }

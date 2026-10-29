@@ -9,6 +9,23 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Lints run on a pinned toolchain: every Rust release adds clippy lints, and
+  # with `-D warnings` a floating `stable` would break CI on release day.
+  # Bump this version deliberately and fix the new lints in the same commit.
+  lint:
+    name: lint (fmt + clippy, Rust 1.99)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.99
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy (pedantic, as configured in Cargo.toml)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
   test:
     name: test (${{ matrix.os }})
     strategy:
@@ -19,14 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
-
-      - name: Format
-        run: cargo fmt --all --check
-      - name: Clippy (pedantic, as configured in Cargo.toml)
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Tests (unit + fixture snapshots)
         run: cargo test --workspace
       - name: Self-scan

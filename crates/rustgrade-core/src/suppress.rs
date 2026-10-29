@@ -266,7 +266,7 @@ mod tests {
         let src =
             "// rustgrade: allow(a, b) -- stub until v0.6\n/// Docs.\n#[inline]\npub fn f() {}\n";
         let (kept, suppressed) = run(src, vec![finding("a", 4), finding("b", 4)]);
-        assert!(kept.is_empty());
+        assert_eq!(kept, Vec::<&str>::new());
         assert_eq!(suppressed.len(), 2);
         assert_eq!(suppressed[0].1, "stub until v0.6");
     }
@@ -283,7 +283,7 @@ mod tests {
         let src = "// rustgrade: allow(a) reason\n\nf();\n";
         let (kept, suppressed) = run(src, vec![finding("a", 3)]);
         assert_eq!(kept, ["a", UNUSED]);
-        assert!(suppressed.is_empty());
+        assert_eq!(suppressed, Vec::<(&str, String)>::new());
     }
 
     #[test]
@@ -306,7 +306,7 @@ mod tests {
         let src = "/// rustgrade: allow(a) docs mention it\n// see https://example.com\nf();\n";
         let (kept, suppressed) = run(src, vec![finding("a", 3)]);
         assert_eq!(kept, ["a"]);
-        assert!(suppressed.is_empty());
+        assert_eq!(suppressed, Vec::<(&str, String)>::new());
     }
 
     #[test]

@@ -296,6 +296,6 @@ mod tests {
     #[test]
     fn ignores_test_code() {
         let src = "#[cfg(test)] mod t { fn f() { let x = crossbeam_channel::unbounded::<u8>(); } }";
-        assert!(messages(src).is_empty());
+        assert_eq!(messages(src), Vec::<String>::new());
     }
 }

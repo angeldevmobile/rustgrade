@@ -261,7 +261,7 @@ mod tests {
             pub fn a() -> Result<()> { todo!() }
             pub fn b() -> Result<(), MyError> { todo!() }
         ";
-        assert!(names(src).is_empty());
+        assert_eq!(names(src), Vec::<String>::new());
     }
 
     #[test]
