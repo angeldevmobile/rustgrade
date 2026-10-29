@@ -12,8 +12,11 @@
 #                         plain           Markdown, no frontmatter
 #                         gemini-toml     TOML with description + prompt, {{args}}
 #                         copilot-prompt  .prompt.md with Copilot frontmatter
-# `detect` paths are relative to the home directory: the agent counts as
-# installed if any of them exists (used by `--agent all` and `doctor`).
+# An agent counts as installed (for `--agent all` and `doctor`) if any `detect`
+# path exists under the home directory, or any `detect_commands` executable is
+# on PATH. Use commands where a folder is ambiguous: ~/.gemini is also created
+# by Antigravity and Gemini Code Assist, ~/.codeium/windsurf by the Codeium
+# editor extension.
 #
 # `.agents/skills/` is read by Codex, Cursor, Gemini CLI, Copilot (VS Code) and
 # Windsurf, so those agents share one copy of the skill.
@@ -47,6 +50,7 @@ skill_dir = ".agents/skills/rustgrade"
 id = "cursor"
 name = "Cursor"
 detect = [".cursor"]
+detect_commands = ["cursor"]
 skill_dir = ".agents/skills/rustgrade"
 commands_dir = ".cursor/commands"
 user_commands_dir = ".cursor/commands"
@@ -55,7 +59,8 @@ commands_format = "plain"
 [[agent]]
 id = "gemini"
 name = "Gemini CLI"
-detect = [".gemini"]
+detect = []
+detect_commands = ["gemini"]
 skill_dir = ".agents/skills/rustgrade"
 commands_dir = ".gemini/commands"
 user_commands_dir = ".gemini/commands"
@@ -73,7 +78,8 @@ commands_format = "copilot-prompt"
 [[agent]]
 id = "windsurf"
 name = "Windsurf (Devin Desktop)"
-detect = [".codeium/windsurf", ".config/devin"]
+detect = [".config/devin"]
+detect_commands = ["windsurf", "devin"]
 skill_dir = ".agents/skills/rustgrade"
 commands_dir = ".devin/workflows"
 user_commands_dir = ".codeium/windsurf/global_workflows"

@@ -100,6 +100,7 @@ fn never_overwrites_or_removes_a_file_it_did_not_write() {
         exists(&sb.proj(".claude/commands/audit.md")),
         "user file survives"
     );
+    assert!(!exists(&sb.proj(".claude/skills")), "emptied dirs pruned");
     assert!(
         !exists(&sb.proj(".claude/skills/rustgrade")),
         "our files are gone"
@@ -182,19 +183,12 @@ fn user_scope_installs_under_home() {
 
 #[test]
 fn every_agent_gets_the_shared_skill_and_its_own_command_format() {
-    let sb = Sandbox::new(
-        "all",
-        &[
-            ".claude",
-            ".codex",
-            ".cursor",
-            ".gemini",
-            ".copilot",
-            ".codeium/windsurf",
-        ],
-    );
-    let (code, out) = sb.run(&["install", "--agent", "all"]);
-    assert_eq!(code, Some(0), "{out}");
+    // Explicit ids: detection depends on this machine's PATH.
+    let sb = Sandbox::new("every", &[]);
+    for agent in ["claude", "codex", "cursor", "gemini", "copilot", "windsurf"] {
+        let (code, out) = sb.run(&["install", "--agent", agent]);
+        assert_eq!(code, Some(0), "{agent}: {out}");
+    }
 
     // One skill copy serves Codex, Cursor, Gemini, Copilot and Windsurf.
     assert!(exists(&sb.proj(".agents/skills/rustgrade/SKILL.md")));
@@ -222,6 +216,13 @@ fn every_agent_gets_the_shared_skill_and_its_own_command_format() {
     ] {
         assert!(!exists(&sb.proj(rel)), "{rel} removed");
     }
+    // ...and no empty directories it created.
+    for dir in [
+        ".agents", ".gemini", ".github", ".devin", ".cursor", ".claude",
+    ] {
+        assert!(!exists(&sb.proj(dir)), "{dir} pruned");
+    }
+    assert!(exists(&sb.proj("")), "the project itself stays");
 }
 
 #[test]
@@ -235,5 +236,26 @@ fn user_scope_skips_commands_where_the_agent_keeps_them_elsewhere() {
     assert!(
         !out.contains("prompt.md"),
         "Copilot user prompts live in VS Code's profile: {out}"
+    );
+}
+
+#[test]
+fn ambiguous_folders_do_not_count_as_installed_agents() {
+    // Antigravity creates ~/.gemini and the Codeium extension ~/.codeium/windsurf;
+    // neither means the Gemini CLI or Windsurf is installed.
+    let sb = Sandbox::new("ambiguous", &[".codex", ".gemini", ".codeium/windsurf"]);
+    let (code, out) = sb.run(&["install", "--agent", "all"]);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(
+        exists(&sb.proj(".agents/skills/rustgrade/SKILL.md")),
+        "codex installed"
+    );
+    assert!(
+        !exists(&sb.proj(".gemini")),
+        "no gemini without its CLI: {out}"
+    );
+    assert!(
+        !exists(&sb.proj(".devin")),
+        "no windsurf without its CLI: {out}"
     );
 }

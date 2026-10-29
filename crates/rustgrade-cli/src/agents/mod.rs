@@ -20,6 +20,9 @@ pub struct Agent {
     pub name: String,
     /// Paths under the home directory whose existence means "installed".
     pub detect: Vec<String>,
+    /// Executables whose presence on PATH means "installed".
+    #[serde(default)]
+    pub detect_commands: Vec<String>,
     /// Skill directory, relative to the install root.
     pub skill_dir: String,
     /// Commands directory for `--scope project`, if the agent has commands.
@@ -81,7 +84,28 @@ pub fn home() -> anyhow::Result<PathBuf> {
 
 /// Whether the agent appears to be installed on this machine.
 pub fn detected(agent: &Agent, home: &Path) -> bool {
-    agent.detect.iter().any(|d| home.join(d).exists())
+    agent.detect.iter().any(|d| join_rel(home, d).exists())
+        || agent.detect_commands.iter().any(|c| on_path(c))
+}
+
+/// Whether `name` is an executable in a PATH directory (with a PATHEXT
+/// extension on Windows, e.g. `gemini.cmd` from npm).
+fn on_path(name: &str) -> bool {
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    let exts = if cfg!(windows) {
+        std::env::var("PATHEXT").unwrap_or_else(|_| ".EXE;.CMD;.BAT;.PS1".into())
+    } else {
+        String::new()
+    };
+    std::env::split_paths(&path).any(|dir| {
+        dir.join(name).is_file()
+            || exts.split(';').filter(|e| !e.is_empty()).any(|ext| {
+                dir.join(format!("{name}{}", ext.to_ascii_lowercase()))
+                    .is_file()
+            })
+    })
 }
 
 /// Every file to write for `agent` under `root`, with its contents. Commands

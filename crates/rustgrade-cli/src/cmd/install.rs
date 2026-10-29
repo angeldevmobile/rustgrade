@@ -160,6 +160,7 @@ pub fn uninstall(opts: &Options<'_>) -> anyhow::Result<u8> {
                     if !opts.dry_run {
                         fs::remove_file(&f.path)
                             .with_context(|| format!("removing {}", f.path.display()))?;
+                        prune_empty_parents(&f.path, &root);
                     }
                     "removed"
                 }
@@ -174,11 +175,6 @@ pub fn uninstall(opts: &Options<'_>) -> anyhow::Result<u8> {
             } else {
                 writeln!(out)?;
             }
-        }
-        if let Some(agent) = all.iter().find(|a| a.id == inst.agent)
-            && !opts.dry_run
-        {
-            remove_empty_dirs(&root.join(&agent.skill_dir));
         }
         if !opts.dry_run {
             manifest.remove(&inst.agent, &root);
@@ -268,6 +264,7 @@ fn remove_stale(
             if !opts.dry_run {
                 fs::remove_file(&f.path)
                     .with_context(|| format!("removing {}", f.path.display()))?;
+                prune_empty_parents(&f.path, root);
             }
             write_entry(out, "removed", &f.path, root)?;
             writeln!(out)?;
@@ -276,17 +273,15 @@ fn remove_stale(
     Ok(())
 }
 
-/// Removes `dir` and its subdirectories if they are empty; never touches files.
-fn remove_empty_dirs(dir: &Path) {
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            if entry.file_type().is_ok_and(|t| t.is_dir()) {
-                remove_empty_dirs(&entry.path());
-            }
+/// After removing `file`, removes its parent directories while they are empty,
+/// stopping at the first non-empty one and never at or above `root`.
+fn prune_empty_parents(file: &Path, root: &Path) {
+    for dir in file.ancestors().skip(1) {
+        // `remove_dir` fails (and we stop) as soon as a directory has contents.
+        if dir == root || !dir.starts_with(root) || fs::remove_dir(dir).is_err() {
+            break;
         }
     }
-    // Fails (and is ignored) when the directory still has files.
-    let _ = fs::remove_dir(dir);
 }
 
 fn header(out: &mut impl Write, agent: &Agent, scope: Scope, root: &Path) -> io::Result<()> {
