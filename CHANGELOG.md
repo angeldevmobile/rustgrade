@@ -9,6 +9,14 @@ and rubric may change between minor versions; each change is listed here.
 
 ### Added
 
+- `rustgrade audit [path]`: scanner + `cargo clippy` (pedantic) + `cargo test`,
+  graded A–F with the rubric. Areas the code doesn't use (unsafe,
+  concurrency) are detected and left out of the average; a crate that does not
+  compile is an F. `--format text|json`, `--no-clippy`, `--no-tests`.
+- `--fail-on <grade>` for `audit` (fails on that grade or worse), next to
+  `--fail-on <severity>`.
+- `/rustgrade:audit` uses the CLI grade as authoritative and reports judgment
+  findings next to it.
 - `rustgrade-core`: pure rule engine (no I/O) with a versioned JSON report
   (`"schema": 1`, `findings` + `suppressed`).
 - Eight rules: `undocumented-unsafe`, `unwrap-outside-tests`,

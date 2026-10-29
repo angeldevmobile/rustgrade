@@ -8,11 +8,13 @@ pub mod finding;
 pub mod rules;
 pub mod score;
 pub mod suppress;
+pub mod usage;
 
 pub use config::Config;
 pub use finding::{Category, Finding, Severity, Span};
-pub use score::{Area, Cap, Grade, Scorecard};
+pub use score::{Area, Cap, Deduction, Grade, Scorecard};
 pub use suppress::Suppressed;
+pub use usage::Usage;
 
 use serde::Serialize;
 
@@ -42,6 +44,10 @@ pub struct Report {
     pub findings: Vec<Finding>,
     /// Findings silenced inline, with their reason. Not counted by `--fail-on`.
     pub suppressed: Vec<Suppressed>,
+    /// Optional rubric areas the scanned code uses. Feeds grading, not the
+    /// `scan` JSON contract.
+    #[serde(skip)]
+    pub usage: Usage,
 }
 
 /// Findings for one file.
@@ -49,6 +55,7 @@ pub struct Report {
 pub struct FileReport {
     pub findings: Vec<Finding>,
     pub suppressed: Vec<Suppressed>,
+    pub usage: Usage,
 }
 
 /// Scans one file with every enabled rule, then applies inline suppressions.
@@ -85,6 +92,7 @@ pub fn scan_file(file: &SourceFile<'_>, config: &Config) -> Result<FileReport, S
     Ok(FileReport {
         findings,
         suppressed,
+        usage: usage::detect(&ast),
     })
 }
 
@@ -104,6 +112,7 @@ where
             Ok(mut r) => {
                 all.findings.append(&mut r.findings);
                 all.suppressed.append(&mut r.suppressed);
+                all.usage = all.usage.merge(r.usage);
             }
             Err(e) => errors.push(e),
         }
@@ -121,6 +130,7 @@ where
         files_scanned,
         findings: all.findings,
         suppressed: all.suppressed,
+        usage: all.usage,
     };
     (report, errors)
 }

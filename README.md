@@ -52,6 +52,7 @@ cargo install --git https://github.com/angeldevmobile/rustgrade rustgrade
 
 rustgrade scan                     # deterministic scan of the current crate
 rustgrade scan --format json       # what agents read
+rustgrade audit                    # scan + clippy + tests → A–F grade
 rustgrade rules --explain lock-across-await
 ```
 
@@ -70,8 +71,8 @@ Claude Code plugin (skill + commands), inside a Claude Code session:
 Plugin commands are namespaced by Claude Code. Once `rustgrade install` copies
 them into a project's `.claude/commands/`, they are plain `/audit` and `/hot-path`.
 
-**Planned:** `cargo install rustgrade` from crates.io, `rustgrade install --agent all`
-(v0.3) and `rustgrade audit` (v0.4).
+**Planned:** `cargo install rustgrade` from crates.io and `rustgrade install --agent all`
+(v0.3).
 
 ---
 
@@ -94,13 +95,13 @@ The skill tells the agent to ground every review in the scanner:
 ### 2. CLI (`rustgrade`)
 
 Rust binary, no network, no LLM. It parses each file with `syn` and runs the rules;
-`audit` will merge the results with `cargo clippy` and `cargo test`.
+`audit` merges the results with `cargo clippy` and `cargo test` and grades them.
 
 | Command | What it does | Status |
 |---|---|---|
 | `rustgrade scan [path]` | Run the rule engine; prints findings by severity | ✅ |
 | `rustgrade rules [--explain <id>]` | List rules, or explain one with before/after code | ✅ |
-| `rustgrade audit [path]` | `scan` + clippy pedantic + tests → category scores and A–F grade | 🔜 v0.4 |
+| `rustgrade audit [path]` | `scan` + clippy pedantic + tests → category scores and A–F grade | ✅ |
 | `rustgrade install --agent <name\|all>` | Install the skill and commands for one or every agent | 🔜 v0.3 |
 | `rustgrade uninstall --agent <name\|all>` | Remove what `install` wrote (tracked in a manifest) | 🔜 v0.3 |
 | `rustgrade doctor` | Show detected agents, installed versions, toolchain, clippy availability | 🔜 v0.3 |
@@ -108,9 +109,32 @@ Rust binary, no network, no LLM. It parses each file with `syn` and runs the rul
 | `rustgrade mcp` | Start the MCP server on stdio | 🔜 v0.6 |
 
 Flags today: `--format text|json` (`sarif|markdown` 🔜), `--min-severity <sev>`,
-`--fail-on <severity>`. Planned: `--fail-on <grade>`, `--hot <glob>`, `--scope project|user`.
+`--fail-on <severity>` (any command) or `--fail-on <grade>` (`audit`: fails on that
+grade or worse), `audit --no-clippy --no-tests`. Planned: `--hot <glob>`,
+`--scope project|user`.
 
-Exit codes: `0` passed, `1` findings at or above `--fail-on`, `2` tool error.
+Exit codes: `0` passed, `1` threshold reached (`--fail-on`), `2` tool error.
+
+`rustgrade audit` example:
+
+```
+rustgrade audit: B (89), capped by 1 high finding
+
+  Correctness & errors    80  1 high, 1 medium
+  Unsafe                 n/a  no unsafe code
+  Concurrency            n/a  no async, threads, locks or channels
+  Performance            100  -
+  Ownership & API        100  -
+
+  Tests    1 passed, 0 failed
+  Clippy   0 warning(s), pedantic
+  Scanner  2 finding(s), 0 suppressed, 1 file(s)
+```
+
+Areas that don't apply are left out of the average; one high finding caps the grade
+at B, two at C, a critical one or failing tests at D, and a crate that does not
+compile is an F. The full rubric is in
+[skills/rustgrade/references/rubric.md](skills/rustgrade/references/rubric.md).
 
 #### Rules
 
@@ -193,17 +217,19 @@ inserted between `<!-- rustgrade:start -->` / `<!-- rustgrade:end -->` markers, 
 
 ## CI
 
-Today, fail the build on high or critical findings:
+Gate on the grade (fails on C or worse):
 
 ```yaml
 # .github/workflows/rustgrade.yml
 - uses: dtolnay/rust-toolchain@stable
+  with: { components: clippy }
 - run: cargo install --git https://github.com/angeldevmobile/rustgrade rustgrade
-- run: rustgrade scan --fail-on high
+- run: rustgrade audit --fail-on C
 ```
 
-Planned (v0.4): a grade gate with SARIF upload, so findings appear as code-scanning
-annotations on the PR.
+Or, cheaper, only on scanner findings: `rustgrade scan --fail-on high`.
+
+Planned: SARIF output, so findings appear as code-scanning annotations on the PR.
 
 ```yaml
 - run: rustgrade audit --format sarif --fail-on D > rustgrade.sarif
@@ -230,6 +256,7 @@ rustgrade/
 │   │       ├── score.rs          ✅ rubric weights, caps, letter grade
 │   │       ├── config.rs         ✅ rustgrade.toml (allow, exclude, hot paths)
 │   │       ├── suppress.rs       ✅ inline `rustgrade: allow(...)` comments
+│   │       ├── usage.rs          ✅ unsafe / concurrency detection (n/a areas)
 │   │       └── rules/            ✅ one file per rule, each with tests
 │   │           ├── mod.rs        ✅ Rule trait + registry
 │   │           ├── common.rs     ✅ test-code detection, loop walker
@@ -245,11 +272,11 @@ rustgrade/
 │   ├── rustgrade-cli/            ✅ the `rustgrade` binary (clap)
 │   │   ├── src/
 │   │   │   ├── main.rs
-│   │   │   ├── cmd/              ✅ scan, rules · 🔜 audit, install, uninstall, doctor, init
+│   │   │   ├── cmd/              ✅ scan, audit, rules · 🔜 install, uninstall, doctor, init
 │   │   │   ├── output/           ✅ text, json · 🔜 sarif, markdown
-│   │   │   ├── cargo.rs          🔜 clippy/test runners, Cargo.toml metadata
+│   │   │   ├── cargo.rs          ✅ clippy/test runners and output parsers
 │   │   │   └── agents/           🔜 detection + installers driven by targets.toml
-│   │   └── tests/fixtures.rs     ✅ snapshot tests over evals/
+│   │   └── tests/                ✅ fixture snapshots, audit end to end
 │   │
 │   └── rustgrade-mcp/            🔜 optional MCP adapter over stdio (rmcp), behind `--features mcp`
 │       └── src/
@@ -334,7 +361,7 @@ rustgrade/
    inline suppressions, `rules --explain`, skill updated to drive the CLI, eval
    fixtures with snapshot tests ✅
 3. **v0.3:** `rustgrade install` for Claude Code, Cursor, Codex; `targets.toml`; `doctor`
-4. **v0.4:** `audit` with grading; SARIF + GitHub Action
+4. **v0.4:** `audit` with grading ✅; SARIF + GitHub Action
 5. **v0.5:** Gemini CLI, Copilot, Windsurf targets; `/unsafe-review`, `/errors`
 6. **v0.6:** optional `rustgrade mcp` adapter (`--features mcp`) for terminal-less clients
 7. **v1.0:** stable rule IDs, JSON schema and rubric; published evals (skill-only vs

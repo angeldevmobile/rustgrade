@@ -125,15 +125,35 @@ fn deduction(severity: Severity) -> u32 {
     }
 }
 
-/// Grades unsuppressed findings.
+/// One graded issue: a scanner finding, a clippy warning or a judgment call.
+/// Borrowed, so clippy's dynamic lint names need no `'static` strings.
+#[derive(Debug, Clone, Copy)]
+pub struct Deduction<'a> {
+    /// Rule or lint ID; the per-rule limit groups by it.
+    pub rule: &'a str,
+    pub category: Category,
+    pub severity: Severity,
+}
+
+impl<'a> From<&'a Finding> for Deduction<'a> {
+    fn from(f: &'a Finding) -> Self {
+        Self {
+            rule: f.rule,
+            category: f.category,
+            severity: f.severity,
+        }
+    }
+}
+
+/// Grades unsuppressed issues with the rubric.
 ///
 /// `applicable` lists the optional areas the crate uses (`Unsafe`,
-/// `Concurrency`); an area with findings is always applicable.
+/// `Concurrency`); an area with deductions is always applicable.
 #[must_use]
-pub fn grade(findings: &[Finding], applicable: &[Area], tests_failed: bool) -> Scorecard {
+pub fn grade(issues: &[Deduction<'_>], applicable: &[Area], tests_failed: bool) -> Scorecard {
     let mut per_rule: HashMap<(Area, &str), u32> = HashMap::new();
-    for f in findings {
-        *per_rule.entry((Area::of(f.category), f.rule)).or_default() += deduction(f.severity);
+    for i in issues {
+        *per_rule.entry((Area::of(i.category), i.rule)).or_default() += deduction(i.severity);
     }
     let mut deducted: HashMap<Area, u32> = HashMap::new();
     for ((area, _), d) in per_rule {
@@ -164,15 +184,15 @@ pub fn grade(findings: &[Finding], applicable: &[Area], tests_failed: bool) -> S
     // Integer rounding to nearest; the always-applicable areas keep `weights` > 0.
     let average = u8::try_from((sum + weights / 2) / weights).unwrap_or(100);
 
-    let highs = findings
+    let highs = issues
         .iter()
-        .filter(|f| f.severity == Severity::High)
+        .filter(|i| i.severity == Severity::High)
         .count();
     let caps = [
         (highs == 1, Cap::OneHigh),
         (highs >= 2, Cap::ManyHigh),
         (
-            findings.iter().any(|f| f.severity == Severity::Critical),
+            issues.iter().any(|i| i.severity == Severity::Critical),
             Cap::Critical,
         ),
         (tests_failed, Cap::TestsFailing),
@@ -195,22 +215,12 @@ pub fn grade(findings: &[Finding], applicable: &[Area], tests_failed: bool) -> S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::finding::Span;
 
-    fn finding(rule: &'static str, category: Category, severity: Severity) -> Finding {
-        Finding {
+    fn finding(rule: &'static str, category: Category, severity: Severity) -> Deduction<'static> {
+        Deduction {
             rule,
-            severity,
             category,
-            message: String::new(),
-            span: Span {
-                file: "src/lib.rs".into(),
-                line: 1,
-                column: 1,
-                end_line: 1,
-                end_column: 1,
-            },
-            help: None,
+            severity,
         }
     }
 

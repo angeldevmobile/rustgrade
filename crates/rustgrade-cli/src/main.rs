@@ -2,8 +2,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
-use rustgrade_core::Severity;
+use rustgrade_core::{Grade, Severity};
 
+mod cargo;
 mod cmd;
 mod output;
 
@@ -28,10 +29,11 @@ struct Cli {
     #[arg(long, global = true, value_enum)]
     min_severity: Option<SeverityArg>,
 
-    /// Exit with code 1 if any finding is at or above this severity.
-    // TODO: also accept a grade (A-F) once `audit` grades.
-    #[arg(long, global = true, value_enum)]
-    fail_on: Option<SeverityArg>,
+    /// Exit with code 1 if any finding is at or above this severity
+    /// (info|low|medium|high|critical), or, for `audit`, if the grade is this
+    /// letter or worse (A-F).
+    #[arg(long, global = true, value_parser = parse_fail_on)]
+    fail_on: Option<FailOn>,
 }
 
 #[derive(Subcommand)]
@@ -39,7 +41,15 @@ enum Command {
     /// Run the rule engine and print findings by severity.
     Scan { path: Option<PathBuf> },
     /// Scan + clippy pedantic + tests, graded A-F.
-    Audit { path: Option<PathBuf> },
+    Audit {
+        path: Option<PathBuf>,
+        /// Skip `cargo clippy`.
+        #[arg(long)]
+        no_clippy: bool,
+        /// Skip `cargo test` (the failing-tests cap then cannot apply).
+        #[arg(long)]
+        no_tests: bool,
+    },
     /// Install the skill and commands for one or every agent.
     Install {
         #[arg(long)]
@@ -95,11 +105,40 @@ impl From<SeverityArg> for Severity {
     }
 }
 
+/// `--fail-on` threshold.
+#[derive(Clone, Copy, Debug)]
+pub enum FailOn {
+    Severity(Severity),
+    /// Fail when the audit grade is this letter or worse.
+    Grade(Grade),
+}
+
+fn parse_fail_on(s: &str) -> Result<FailOn, String> {
+    let severity = match s.to_ascii_lowercase().as_str() {
+        "info" => Severity::Info,
+        "low" => Severity::Low,
+        "medium" => Severity::Medium,
+        "high" => Severity::High,
+        "critical" => Severity::Critical,
+        "a" => return Ok(FailOn::Grade(Grade::A)),
+        "b" => return Ok(FailOn::Grade(Grade::B)),
+        "c" => return Ok(FailOn::Grade(Grade::C)),
+        "d" => return Ok(FailOn::Grade(Grade::D)),
+        "f" => return Ok(FailOn::Grade(Grade::F)),
+        _ => {
+            return Err(
+                "expected a severity (info|low|medium|high|critical) or a grade (A-F)".into(),
+            );
+        }
+    };
+    Ok(FailOn::Severity(severity))
+}
+
 /// Global options passed down to every command.
 pub struct Globals {
     pub format: Format,
     pub min_severity: Option<Severity>,
-    pub fail_on: Option<Severity>,
+    pub fail_on: Option<FailOn>,
 }
 
 fn main() -> ExitCode {
@@ -107,13 +146,24 @@ fn main() -> ExitCode {
     let globals = Globals {
         format: cli.format,
         min_severity: cli.min_severity.map(Into::into),
-        fail_on: cli.fail_on.map(Into::into),
+        fail_on: cli.fail_on,
     };
 
     let result = match cli.command {
         Command::Scan { path } => cmd::scan::run(path.as_deref(), &globals),
         Command::Rules { explain } => cmd::rules::run(explain.as_deref(), &globals),
-        Command::Audit { .. } => cmd::not_yet("audit"),
+        Command::Audit {
+            path,
+            no_clippy,
+            no_tests,
+        } => cmd::audit::run(
+            path.as_deref(),
+            &cmd::audit::Options {
+                clippy: !no_clippy,
+                tests: !no_tests,
+            },
+            &globals,
+        ),
         Command::Install { .. } => cmd::not_yet("install"),
         Command::Uninstall { .. } => cmd::not_yet("uninstall"),
         Command::Doctor => cmd::not_yet("doctor"),

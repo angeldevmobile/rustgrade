@@ -88,6 +88,14 @@ rationale with before/after code (add `--format json` to parse it); use it
 before arguing with a finding. `--min-severity` filters findings;
 `--fail-on <severity>` exits `1` when any finding reaches that severity.
 
+## Grading
+
+`rustgrade audit [path] --format json` runs the scanner, clippy pedantic and
+`cargo test`, and returns an A–F grade computed with
+[references/rubric.md](references/rubric.md). Treat its grade as authoritative;
+your judgment findings are reported next to it, not mixed into it. Flags:
+`--no-clippy`, `--no-tests`, `--fail-on <grade|severity>`.
+
 ## Commands
 
 Installed as a Claude Code plugin, the commands are namespaced:

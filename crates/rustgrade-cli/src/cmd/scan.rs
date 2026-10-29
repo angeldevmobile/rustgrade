@@ -3,16 +3,34 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use rustgrade_core::{Config, SourceFile};
+use rustgrade_core::{Config, Report, Severity, SourceFile};
 
-use crate::{EXIT_FINDINGS, EXIT_OK, Globals, output};
+use crate::{EXIT_FINDINGS, EXIT_OK, FailOn, Globals, output};
 
 const CONFIG_FILE: &str = "rustgrade.toml";
 
 pub fn run(path: Option<&Path>, globals: &Globals) -> anyhow::Result<u8> {
+    let threshold = match globals.fail_on {
+        None => None,
+        Some(FailOn::Severity(s)) => Some(s),
+        Some(FailOn::Grade(_)) => {
+            anyhow::bail!("`--fail-on <grade>` applies to `audit`; use a severity with `scan`")
+        }
+    };
     let root = path.unwrap_or(Path::new("."));
+    let report = build_report(root, globals.min_severity)?;
+
+    output::render(&report, globals.format)?;
+
+    let failed = threshold.is_some_and(|t| report.findings.iter().any(|f| f.severity >= t));
+    Ok(if failed { EXIT_FINDINGS } else { EXIT_OK })
+}
+
+/// Scans every Rust file under `root` with its `rustgrade.toml`. Files that
+/// fail to parse are reported on stderr and skipped.
+pub fn build_report(root: &Path, min_severity: Option<Severity>) -> anyhow::Result<Report> {
     let mut config = load_config(root)?;
-    if let Some(min) = globals.min_severity {
+    if let Some(min) = min_severity {
         config.min_severity = min;
     }
 
@@ -38,13 +56,7 @@ pub fn run(path: Option<&Path>, globals: &Globals) -> anyhow::Result<u8> {
     for e in &errors {
         eprintln!("warning: {e}");
     }
-
-    output::render(&report, globals.format)?;
-
-    let failed = globals
-        .fail_on
-        .is_some_and(|t| report.findings.iter().any(|f| f.severity >= t));
-    Ok(if failed { EXIT_FINDINGS } else { EXIT_OK })
+    Ok(report)
 }
 
 fn load_config(root: &Path) -> anyhow::Result<Config> {

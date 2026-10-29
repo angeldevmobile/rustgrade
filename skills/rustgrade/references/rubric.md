@@ -1,26 +1,29 @@
 # Grading rubric
 
-Used by `/rustgrade:audit` to turn findings into category scores and an A–F
-grade. `rustgrade-core` implements the same rules in `score.rs`, which
-`rustgrade audit` will use (roadmap v0.4); until then the agent applies them by
-hand to the scanner's JSON.
+`rustgrade audit` computes this grade (`rustgrade-core/src/score.rs`); the
+agent only applies it by hand when the CLI is unavailable, and uses it to say
+what judgment findings would do to the grade.
 
 ## Inputs
 
-1. `rustgrade scan --format json`: unsuppressed `findings` only.
+1. Scanner: unsuppressed `findings` from `rustgrade scan`.
 2. `cargo clippy --all-targets -- -W clippy::pedantic`: each warning counts as
-   a `low` finding in the closest category (`perf` lints → performance,
-   `correctness` / `suspicious` → errors, the rest → ownership & API).
+   a `low` finding. Deny-by-default lints (the `correctness` group) →
+   Correctness & errors; the `perf` group → Performance; everything else →
+   Ownership & API. A lint reported for several targets at one location counts
+   once.
 3. `cargo test`: pass / fail.
-4. Judgment findings from the review, each with a severity, marked `(judgment)`.
+4. Judgment findings from the review, each with a severity, marked
+   `(judgment)`. They never change the CLI grade; the report states the grade
+   they would produce.
 
 ## Categories and weights
 
 | Category | Weight | Scanner categories | Applicable when |
 |---|---|---|---|
 | Correctness & errors | 25 | `errors`, `meta` | always |
-| Unsafe | 20 | `unsafe` | the crate contains `unsafe` |
-| Concurrency | 20 | `concurrency` | threads, async, channels or locks are used |
+| Unsafe | 20 | `unsafe` | the crate contains `unsafe` (blocks, fns, impls, traits, `extern` blocks) |
+| Concurrency | 20 | `concurrency` | async code, threads, locks, channels, atomics or a concurrency crate |
 | Performance | 15 | `performance` | always |
 | Ownership & API | 20 | `ownership`, `api-design` | always |
 

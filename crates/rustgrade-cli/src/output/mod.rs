@@ -3,7 +3,7 @@ use rustgrade_core::Report;
 use crate::Format;
 
 mod json;
-mod text;
+pub mod text;
 
 pub fn render(report: &Report, format: Format) -> anyhow::Result<()> {
     match format {
