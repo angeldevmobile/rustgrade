@@ -259,8 +259,8 @@ Or, cheaper, only on scanner findings: `rustgrade scan --fail-on high`.
 With `--format sarif`, findings show up as code-scanning annotations on the PR
 (and the grade rides along in the run's `properties`). Run it from the repo root:
 file paths include the scan path, so `rustgrade scan crates/core` still points at
-`crates/core/src/...`. Inline suppressions are uploaded as suppressed, with their
-reason.
+`crates/core/src/...`. Inline suppressions are not uploaded (code scanning would
+open alerts for them); they stay in `--format json` with their reason.
 
 ```yaml
 # .github/workflows/rustgrade.yml

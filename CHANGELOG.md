@@ -67,7 +67,8 @@ installed plugin when that version changes.
 - `--format sarif` (SARIF 2.1.0) for `scan` and `audit`, for GitHub code
   scanning. Every rule is a descriptor with its `--explain` text as help;
   critical/high map to `error`, medium to `warning`, low/info to `note`.
-  Inline suppressions become `inSource` suppressions with their reason. File
+  Inline suppressions are left out (code scanning opens alerts even for SARIF
+  `suppressions`); they stay in the JSON output. File
   URIs include the scan path, so they resolve from the repo root; `audit` puts
   the grade, score and cap in the run's `properties`.
 

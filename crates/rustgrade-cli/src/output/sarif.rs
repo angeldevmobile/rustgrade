@@ -22,9 +22,12 @@ pub fn write(log: &Value) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// One run with every rule as a descriptor, findings as results and inline
-/// suppressions as suppressed results. `properties` lands on the run (audit
-/// puts the grade there).
+/// One run with every rule as a descriptor and findings as results.
+/// `properties` lands on the run (audit puts the grade there).
+///
+/// Inline suppressions are left out: code scanning opens alerts for results
+/// with SARIF `suppressions` too, and a reviewed `allow` with a mandatory
+/// reason should not become one. They stay in the JSON output.
 pub fn to_sarif(report: &Report, root: &Path, properties: Option<Value>) -> Value {
     let registry = rules::registry();
     let mut descriptors: Vec<Value> = registry.iter().map(|r| descriptor(*r)).collect();
@@ -44,16 +47,11 @@ pub fn to_sarif(report: &Report, root: &Path, properties: Option<Value>) -> Valu
             .position(|r| r == id)
     };
 
-    let mut results: Vec<Value> = report
+    let results: Vec<Value> = report
         .findings
         .iter()
         .map(|f| result(f, root, index_of(f.rule)))
         .collect();
-    results.extend(report.suppressed.iter().map(|s| {
-        let mut r = result(&s.finding, root, index_of(s.finding.rule));
-        r["suppressions"] = json!([{ "kind": "inSource", "justification": s.reason }]);
-        r
-    }));
 
     let mut run = json!({
         "tool": {

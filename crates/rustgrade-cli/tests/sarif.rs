@@ -7,10 +7,14 @@ use serde_json::Value;
 
 /// Runs from the repo root with a relative path, as CI would.
 fn sarif(args: &[&str]) -> Value {
+    run(args, "sarif")
+}
+
+fn run(args: &[&str], format: &str) -> Value {
     let output = Command::new(env!("CARGO_BIN_EXE_rustgrade"))
         .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))
         .args(args)
-        .args(["--format", "sarif"])
+        .args(["--format", format])
         .output()
         .expect("run rustgrade");
     assert!(
@@ -50,21 +54,16 @@ fn scan_results_point_at_their_rule_and_file() {
 }
 
 #[test]
-fn inline_suppressions_carry_their_reason() {
-    let log = sarif(&["scan", "evals/fixtures/mutex-everywhere"]);
-    let suppressed: Vec<_> = results(&log)
-        .iter()
-        .filter_map(|r| r["suppressions"].as_array())
-        .collect();
-    assert_ne!(suppressed.len(), 0, "the fixture has a suppression");
-    for s in suppressed {
-        assert_eq!(s[0]["kind"], "inSource");
-        assert!(
-            s[0]["justification"]
-                .as_str()
-                .is_some_and(|j| !j.is_empty())
-        );
-    }
+fn inline_suppressions_are_not_uploaded() {
+    let args = ["scan", "evals/fixtures/mutex-everywhere"];
+    let json = run(&args, "json");
+    let count = |key: &str| json[key].as_array().map(Vec::len);
+    assert_ne!(
+        count("suppressed"),
+        Some(0),
+        "the fixture has a suppression"
+    );
+    assert_eq!(Some(results(&sarif(&args)).len()), count("findings"));
 }
 
 #[test]
