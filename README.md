@@ -115,7 +115,7 @@ Rust binary, no network, no LLM. It parses each file with `syn` and runs the rul
 | `rustgrade init` | Write a `rustgrade.toml` with defaults for the current crate | 🔜 |
 | `rustgrade mcp` | Start the MCP server on stdio | 🔜 v0.6 |
 
-Flags today: `--format text|json` (`sarif|markdown` 🔜), `--min-severity <sev>`,
+Flags today: `--format text|json|sarif` (`markdown` 🔜), `--min-severity <sev>`,
 `--fail-on <severity>` (any command) or `--fail-on <grade>` (`audit`: fails on that
 grade or worse), `audit --no-clippy --no-tests`,
 `install`/`uninstall --scope project|user --dir <path> --dry-run --force`.
@@ -256,12 +256,31 @@ Gate on the grade (fails on C or worse):
 
 Or, cheaper, only on scanner findings: `rustgrade scan --fail-on high`.
 
-Planned: SARIF output, so findings appear as code-scanning annotations on the PR.
+With `--format sarif`, findings show up as code-scanning annotations on the PR
+(and the grade rides along in the run's `properties`). Run it from the repo root:
+file paths include the scan path, so `rustgrade scan crates/core` still points at
+`crates/core/src/...`. Inline suppressions are uploaded as suppressed, with their
+reason.
 
 ```yaml
-- run: rustgrade audit --format sarif --fail-on D > rustgrade.sarif
-- uses: github/codeql-action/upload-sarif@v3
-  with: { sarif_file: rustgrade.sarif }
+# .github/workflows/rustgrade.yml
+name: rustgrade
+on: [push, pull_request]
+permissions:
+  contents: read
+  security-events: write   # upload-sarif
+jobs:
+  rustgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: clippy }
+      - run: cargo install --locked --git https://github.com/angeldevmobile/rustgrade rustgrade
+      - run: rustgrade audit --format sarif --fail-on D > rustgrade.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()   # upload even when --fail-on fails the step
+        with: { sarif_file: rustgrade.sarif, category: rustgrade }
 ```
 
 ---
@@ -300,7 +319,7 @@ rustgrade/
 │   │   ├── src/
 │   │   │   ├── main.rs
 │   │   │   ├── cmd/              ✅ scan, audit, rules, install, uninstall, doctor · 🔜 init
-│   │   │   ├── output/           ✅ text, json · 🔜 sarif, markdown
+│   │   │   ├── output/           ✅ text, json, sarif · 🔜 markdown
 │   │   │   ├── cargo.rs          ✅ clippy/test runners and output parsers
 │   │   │   └── agents/           ✅ targets, embedded skill, command translation, manifest
 │   │   └── tests/                ✅ fixture snapshots, audit and install end to end
@@ -386,7 +405,7 @@ rustgrade/
    inline suppressions, `rules --explain`, skill updated to drive the CLI, eval
    fixtures with snapshot tests ✅
 3. **v0.3:** `rustgrade install` for Claude Code, Cursor, Codex; `targets.toml`; `doctor` ✅
-4. **v0.4:** `audit` with grading ✅; SARIF + GitHub Action
+4. **v0.4:** `audit` with grading ✅; SARIF + GitHub Action ✅
 5. **v0.5:** Gemini CLI, Copilot, Windsurf targets ✅; `/unsafe-review`, `/errors`
 6. **v0.6:** optional `rustgrade mcp` adapter (`--features mcp`) for terminal-less clients
 7. **v1.0:** stable rule IDs, JSON schema and rubric; published evals (skill-only vs

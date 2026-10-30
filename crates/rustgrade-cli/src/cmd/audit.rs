@@ -11,6 +11,7 @@ use serde_json::json;
 
 use crate::cargo::{self, Clippy, ClippyWarning, Tests};
 use crate::cmd::scan;
+use crate::output::sarif;
 use crate::output::text::write_findings;
 use crate::{EXIT_FINDINGS, EXIT_OK, FailOn, Format, Globals};
 
@@ -31,13 +32,9 @@ enum Outcome {
 }
 
 pub fn run(path: Option<&Path>, opts: &Options, globals: &Globals) -> anyhow::Result<u8> {
-    let json = match globals.format {
-        Format::Json => true,
-        Format::Text => false,
-        Format::Sarif | Format::Markdown => {
-            anyhow::bail!("`audit` supports --format text or json")
-        }
-    };
+    if matches!(globals.format, Format::Markdown) {
+        anyhow::bail!("`audit` supports --format text, json or sarif");
+    }
     let root = path.unwrap_or(Path::new("."));
     scan::ensure_exists(root)?;
     let manifest = root.join("Cargo.toml");
@@ -52,11 +49,18 @@ pub fn run(path: Option<&Path>, opts: &Options, globals: &Globals) -> anyhow::Re
     let report = scan::build_report(root, None)?;
     let outcome = grade_crate(&report, &manifest, opts)?;
 
-    if json {
-        let value = to_json(&report, &outcome);
-        println!("{}", serde_json::to_string_pretty(&value)?);
-    } else {
-        render_text(&report, &outcome, globals.min_severity)?;
+    match globals.format {
+        Format::Json => {
+            let value = to_json(&report, &outcome);
+            println!("{}", serde_json::to_string_pretty(&value)?);
+        }
+        Format::Sarif => {
+            let grade = sarif_properties(&outcome);
+            sarif::write(&sarif::to_sarif(&report, root, Some(grade)))?;
+        }
+        Format::Text | Format::Markdown => {
+            render_text(&report, &outcome, globals.min_severity)?;
+        }
     }
 
     let failed = match (&globals.fail_on, &outcome) {
@@ -155,6 +159,30 @@ fn to_json(report: &Report, outcome: &Outcome) -> serde_json::Value {
                 "scan": report,
             })
         }
+    }
+}
+
+/// The grade rides on the SARIF run; clippy warnings carry no location, so
+/// only their count goes along.
+fn sarif_properties(outcome: &Outcome) -> serde_json::Value {
+    match outcome {
+        Outcome::DoesNotCompile { error } => json!({
+            "grade": "F",
+            "score": 0,
+            "cap": "does-not-compile",
+            "error": error,
+        }),
+        Outcome::Graded {
+            card,
+            clippy,
+            tests,
+        } => json!({
+            "grade": card.grade,
+            "score": card.score,
+            "cap": card.cap,
+            "clippyWarnings": clippy.as_ref().map(Vec::len),
+            "tests": tests.as_ref().map(test_status),
+        }),
     }
 }
 

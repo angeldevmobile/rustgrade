@@ -64,3 +64,14 @@ installed plugin when that version changes.
   performance, concurrency, unsafe and grading; `/rustgrade:audit` and
   `/rustgrade:hot-path` commands; Claude Code plugin and marketplace manifests.
 - CI on Linux and Windows: fmt, clippy pedantic, tests, self-scan, MSRV 1.88.
+- `--format sarif` (SARIF 2.1.0) for `scan` and `audit`, for GitHub code
+  scanning. Every rule is a descriptor with its `--explain` text as help;
+  critical/high map to `error`, medium to `warning`, low/info to `note`.
+  Inline suppressions become `inSource` suppressions with their reason. File
+  URIs include the scan path, so they resolve from the repo root; `audit` puts
+  the grade, score and cap in the run's `properties`.
+
+### Fixed
+
+- Scanning a single file printed an empty path (`:6:43:`); it now prints the
+  path as given.

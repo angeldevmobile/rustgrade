@@ -20,7 +20,7 @@ pub fn run(path: Option<&Path>, globals: &Globals) -> anyhow::Result<u8> {
     let root = path.unwrap_or(Path::new("."));
     let report = build_report(root, globals.min_severity)?;
 
-    output::render(&report, globals.format)?;
+    output::render(&report, root, globals.format)?;
 
     let failed = threshold.is_some_and(|t| report.findings.iter().any(|f| f.severity >= t));
     Ok(if failed { EXIT_FINDINGS } else { EXIT_OK })
@@ -145,10 +145,13 @@ fn in_library(file: &Path, crate_dirs: &mut HashMap<PathBuf, Option<PathBuf>>) -
         .is_ok_and(|rel| rel != Path::new("main.rs") && !rel.starts_with("bin"))
 }
 
-/// Paths relative to the scan root with forward slashes, so output is stable across OSes.
+/// Paths relative to the scan root with forward slashes, so output is stable
+/// across OSes. A single-file root keeps its path as given.
 fn display_path(root: &Path, p: &Path) -> String {
-    p.strip_prefix(root)
-        .unwrap_or(p)
-        .to_string_lossy()
-        .replace('\\', "/")
+    match p.strip_prefix(root) {
+        Ok(rel) if !rel.as_os_str().is_empty() => rel,
+        _ => p,
+    }
+    .to_string_lossy()
+    .replace('\\', "/")
 }
