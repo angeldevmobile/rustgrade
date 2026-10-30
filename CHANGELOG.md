@@ -13,6 +13,20 @@ installed plugin when that version changes.
 
 ### Added
 
+- `install` adds a marked rustgrade section to each agent's instructions file
+  (`CLAUDE.md`, `AGENTS.md` for Codex / Cursor / Windsurf, `GEMINI.md`,
+  `.github/copilot-instructions.md`; `~/.claude/CLAUDE.md`,
+  `~/.codex/AGENTS.md` and `~/.gemini/GEMINI.md` with `--scope user`). It tells
+  the agent to use the skill and run `rustgrade scan` before finishing. Only the
+  block between the markers is rustgrade's: it is added, updated, kept when you
+  edit it, and removed by `uninstall`, leaving the rest of the file as it was.
+  `--no-instructions` skips it. Text in `targets/instructions.md`.
+- `evals/agents/`: Claude Code headless on three tasks (a network frame decoder,
+  an async cache, an unsafe ring buffer) under four conditions, measured with
+  hidden tests and clippy lints rustgrade does not control. The finding behind
+  the section above: with the skill installed, Sonnet used it in 0 of 6 runs;
+  with the section, in 6 of 6.
+
 - Prebuilt binaries on every GitHub release (`release.yml`, on `v*` tags):
   Linux x86_64 / aarch64 (static, musl), macOS x86_64 / aarch64, Windows
   x86_64, with SHA-256 checksums and notes from this file. Asset names carry no

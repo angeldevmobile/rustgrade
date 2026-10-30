@@ -1,6 +1,5 @@
 //! `rustgrade doctor`: toolchain, detected agents and the state of every install.
 
-use std::fs;
 use std::io::{self, Write};
 use std::process::Command;
 
@@ -73,10 +72,10 @@ pub fn run() -> anyhow::Result<u8> {
 fn write_status(out: &mut impl Write, agent: &Agent, inst: &Install) -> io::Result<()> {
     let (mut missing, mut edited) = (0, 0);
     for f in &inst.files {
-        match fs::read(&f.path) {
-            Ok(bytes) if content_hash(&bytes) == f.hash => {}
-            Ok(_) => edited += 1,
-            Err(_) => missing += 1,
+        match agents::current_hash(&f.path, f.section) {
+            Ok(Some(hash)) if hash == f.hash => {}
+            Ok(Some(_)) => edited += 1,
+            Ok(None) | Err(_) => missing += 1,
         }
     }
     // Shipped files that were never written (an existing file was kept), and
@@ -89,6 +88,13 @@ fn write_status(out: &mut impl Write, agent: &Agent, inst: &Install) -> io::Resu
             Some(_) => {}
         }
     }
+    // The section is optional (`--no-instructions`): only an old one counts.
+    let section = content_hash(agents::instructions_block().as_bytes());
+    outdated += inst
+        .files
+        .iter()
+        .filter(|f| f.section && f.hash != section)
+        .count();
 
     if missing + edited + blocked + outdated == 0 {
         return write!(out, "up to date ({} files)", inst.files.len());

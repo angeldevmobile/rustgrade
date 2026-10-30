@@ -58,6 +58,10 @@ enum Command {
         /// Overwrite files that rustgrade did not write or that were edited.
         #[arg(long)]
         force: bool,
+        /// Skip the rustgrade section in CLAUDE.md, AGENTS.md and the like
+        /// (without it, agents rarely load the skill on their own).
+        #[arg(long)]
+        no_instructions: bool,
     },
     /// Remove what `install` wrote (edited files are kept unless --force).
     Uninstall {
@@ -125,13 +129,14 @@ struct InstallTarget {
 }
 
 impl InstallTarget {
-    fn options(&self, force: bool) -> cmd::install::Options<'_> {
+    fn options(&self, force: bool, instructions: bool) -> cmd::install::Options<'_> {
         cmd::install::Options {
             agent: &self.agent,
             scope: self.scope,
             dir: self.dir.as_deref(),
             force,
             dry_run: self.dry_run,
+            instructions,
         }
     }
 }
@@ -195,8 +200,14 @@ fn main() -> ExitCode {
             },
             &globals,
         ),
-        Command::Install { target, force } => cmd::install::install(&target.options(force)),
-        Command::Uninstall { target, force } => cmd::install::uninstall(&target.options(force)),
+        Command::Install {
+            target,
+            force,
+            no_instructions,
+        } => cmd::install::install(&target.options(force, !no_instructions)),
+        Command::Uninstall { target, force } => {
+            cmd::install::uninstall(&target.options(force, true))
+        }
         Command::Doctor => cmd::doctor::run(),
         Command::Init => cmd::not_yet("init"),
     };

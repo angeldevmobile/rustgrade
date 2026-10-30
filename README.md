@@ -82,6 +82,15 @@ rustgrade doctor                       # toolchain, agents, install status
 rustgrade uninstall --agent all        # remove exactly what install wrote
 ```
 
+`install` also adds a short, marked rustgrade section to each agent's instructions
+file (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.github/copilot-instructions.md`),
+telling the agent to use the skill and run `rustgrade scan` before it finishes.
+Agents read that file on every request but load a skill only when they decide it
+applies: in [our evals](evals/agents/RESULTS.md) the skill was used in 0 of 6 coding
+runs without the section and in every run with it. `--no-instructions` skips it. With
+the plugin, add the same lines yourself; they are in
+[`targets/instructions.md`](targets/instructions.md).
+
 ---
 
 ## The three layers
@@ -119,7 +128,8 @@ Rust binary, no network, no LLM. It parses each file with `syn` and runs the rul
 Flags today: `--format text|json|sarif` (`markdown` 🔜), `--min-severity <sev>`,
 `--fail-on <severity>` (any command) or `--fail-on <grade>` (`audit`: fails on that
 grade or worse), `audit --no-clippy --no-tests`,
-`install`/`uninstall --scope project|user --dir <path> --dry-run --force`.
+`install`/`uninstall --scope project|user --dir <path> --dry-run --force`,
+`install --no-instructions`.
 Planned: `--hot <glob>`.
 
 Exit codes: `0` passed, `1` threshold reached (`--fail-on`), `2` tool error.
@@ -242,7 +252,9 @@ touch Rust code.
 **Safe installs.** Every file written is recorded with its hash in
 `~/.rustgrade/manifest.json`. `install` never overwrites a file it didn't write or that
 you edited, and `uninstall` removes only its own unedited files (both take `--force`),
-keeping files another agent still uses.
+keeping files another agent still uses. In instructions files rustgrade owns only the
+block between `<!-- rustgrade:begin -->` and `<!-- rustgrade:end -->`: the rest of your
+`CLAUDE.md` is never touched, and `uninstall` puts it back as it was.
 
 ---
 

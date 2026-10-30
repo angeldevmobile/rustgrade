@@ -77,7 +77,7 @@ fn installs_skill_and_commands_for_claude_and_is_idempotent() {
     );
 
     let (_, doctor) = sb.run(&["doctor"]);
-    assert!(doctor.contains("up to date (9 files)"), "{doctor}");
+    assert!(doctor.contains("up to date (10 files)"), "{doctor}");
 }
 
 #[test]
@@ -267,4 +267,94 @@ fn ambiguous_folders_do_not_count_as_installed_agents() {
         !exists(&sb.proj(".devin")),
         "no windsurf without its CLI: {out}"
     );
+}
+
+fn read(p: &Path) -> String {
+    fs::read_to_string(p).expect("readable")
+}
+
+#[test]
+fn adds_a_section_to_claude_md_and_removes_only_that() {
+    let sb = Sandbox::new("section", &[".claude"]);
+    let claude_md = sb.proj("CLAUDE.md");
+    let mine = "# My project\n\nUse tabs.\n";
+    fs::write(&claude_md, mine).expect("write CLAUDE.md");
+
+    let (code, out) = sb.run(&["install", "--agent", "claude"]);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(out.contains("added     CLAUDE.md section"), "{out}");
+    let text = read(&claude_md);
+    assert!(
+        text.starts_with(mine),
+        "user content first, untouched: {text}"
+    );
+    assert!(text.contains("<!-- rustgrade:begin"), "{text}");
+    assert!(text.contains("`rustgrade` skill"), "{text}");
+
+    let (_, again) = sb.run(&["install", "--agent", "claude"]);
+    assert!(again.contains("unchanged CLAUDE.md section"), "{again}");
+    assert_eq!(read(&claude_md), text, "idempotent");
+
+    let (code, out) = sb.run(&["uninstall", "--agent", "claude"]);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(out.contains("removed   CLAUDE.md section"), "{out}");
+    assert_eq!(read(&claude_md), mine, "back to the user's file");
+}
+
+#[test]
+fn a_section_rustgrade_created_goes_with_its_file() {
+    let sb = Sandbox::new("section-file", &[".claude"]);
+    sb.run(&["install", "--agent", "claude"]);
+    assert!(exists(&sb.proj("CLAUDE.md")));
+    sb.run(&["uninstall", "--agent", "claude"]);
+    assert!(!exists(&sb.proj("CLAUDE.md")), "nothing else was in it");
+}
+
+#[test]
+fn an_edited_section_is_kept_unless_forced() {
+    let sb = Sandbox::new("section-edit", &[".claude"]);
+    sb.run(&["install", "--agent", "claude"]);
+    let claude_md = sb.proj("CLAUDE.md");
+    let edited = read(&claude_md).replace("Before you finish", "When asked");
+    fs::write(&claude_md, &edited).expect("edit section");
+
+    let (code, out) = sb.run(&["uninstall", "--agent", "claude"]);
+    assert_eq!(code, Some(1), "{out}");
+    assert_eq!(read(&claude_md), edited, "edited section kept");
+
+    sb.run(&["install", "--agent", "claude"]);
+    let (code, out) = sb.run(&["install", "--agent", "claude", "--force"]);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(
+        read(&claude_md).contains("Before you finish"),
+        "forced back"
+    );
+}
+
+#[test]
+fn no_instructions_skips_the_section_and_a_later_run_drops_it() {
+    let sb = Sandbox::new("section-off", &[".claude"]);
+    let (_, out) = sb.run(&["install", "--agent", "claude", "--no-instructions"]);
+    assert!(!exists(&sb.proj("CLAUDE.md")), "{out}");
+    let (_, doctor) = sb.run(&["doctor"]);
+    assert!(doctor.contains("up to date (9 files)"), "{doctor}");
+
+    sb.run(&["install", "--agent", "claude"]);
+    assert!(exists(&sb.proj("CLAUDE.md")));
+    let (_, out) = sb.run(&["install", "--agent", "claude", "--no-instructions"]);
+    assert!(out.contains("removed   CLAUDE.md section"), "{out}");
+    assert!(!exists(&sb.proj("CLAUDE.md")));
+}
+
+#[test]
+fn agents_md_section_is_shared_like_the_skill() {
+    let sb = Sandbox::new("section-shared", &[".codex", ".cursor"]);
+    sb.run(&["install", "--agent", "all"]);
+    let agents_md = sb.proj("AGENTS.md");
+    assert_eq!(read(&agents_md).matches("rustgrade:begin").count(), 1);
+
+    sb.run(&["uninstall", "--agent", "codex"]);
+    assert!(exists(&agents_md), "still used by cursor");
+    sb.run(&["uninstall", "--agent", "cursor"]);
+    assert!(!exists(&agents_md), "removed with its last owner");
 }

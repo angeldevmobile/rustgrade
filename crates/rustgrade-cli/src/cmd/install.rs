@@ -1,7 +1,7 @@
 //! `rustgrade install` / `uninstall`: copy the skill and commands into agent
-//! directories, tracked in the manifest so every change is reversible.
+//! directories and add the rustgrade section to each agent's instructions
+//! file, tracked in the manifest so every change is reversible.
 
-use std::borrow::Cow;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 
 use crate::agents::manifest::{FileRecord, Install, Manifest};
-use crate::agents::{self, Agent, Scope, content_hash};
+use crate::agents::{self, Agent, Scope, content_hash, section};
 use crate::{EXIT_FINDINGS, EXIT_OK};
 
 pub struct Options<'a> {
@@ -20,6 +20,8 @@ pub struct Options<'a> {
     pub dir: Option<&'a Path>,
     pub force: bool,
     pub dry_run: bool,
+    /// Add the rustgrade section to the agent's instructions file.
+    pub instructions: bool,
 }
 
 /// What happens to one file.
@@ -92,7 +94,7 @@ fn install_agent(
     let mut decided = Vec::with_capacity(planned.len());
     for (path, contents) in &planned {
         let hash = content_hash(contents.as_bytes());
-        let action = decide(path, &hash, manifest, opts.force)?;
+        let action = decide(path, &hash, manifest, opts.force, false)?;
         if matches!(action, Action::Create | Action::Update) && !opts.dry_run {
             if let Some(dir) = path.parent() {
                 fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
@@ -125,6 +127,7 @@ fn install_agent(
             records.push(FileRecord {
                 path: path.clone(),
                 hash,
+                section: false,
             });
             continue;
         }
@@ -146,10 +149,24 @@ fn install_agent(
             records.push(FileRecord {
                 path: path.clone(),
                 hash,
+                section: false,
             });
         }
     }
-    remove_stale(out, manifest, agent, root, &planned, opts)?;
+
+    let section_path = agent
+        .instructions_path(root, opts.scope)
+        .filter(|_| opts.instructions);
+    if let Some(path) = &section_path {
+        match install_section(out, path, root, manifest, opts)? {
+            Some(record) => records.push(record),
+            None => *conflicts += 1,
+        }
+    }
+
+    let mut shipped: Vec<&Path> = planned.iter().map(|(p, _)| p.as_path()).collect();
+    shipped.extend(section_path.as_deref());
+    remove_stale(out, manifest, agent, root, &shipped, opts)?;
     Ok(Install {
         agent: agent.id.clone(),
         scope: opts.scope,
@@ -222,27 +239,27 @@ pub fn uninstall(opts: &Options<'_>) -> anyhow::Result<u8> {
                 writeln!(out, "  (also installed for another agent)")?;
                 continue;
             }
-            let verb = match fs::read(&f.path) {
-                Err(e) if e.kind() == io::ErrorKind::NotFound => "gone",
-                Err(e) => return Err(e).with_context(|| format!("reading {}", f.path.display())),
-                Ok(bytes) if content_hash(&bytes) == f.hash || opts.force => {
+            let current = agents::current_hash(&f.path, f.section)
+                .with_context(|| format!("reading {}", f.path.display()))?;
+            let verb = match current {
+                None => "gone",
+                Some(hash) if hash == f.hash || opts.force => {
                     if !opts.dry_run {
-                        fs::remove_file(&f.path)
-                            .with_context(|| format!("removing {}", f.path.display()))?;
-                        prune_empty_parents(&f.path, &root);
+                        remove_owned(f, &root)?;
                     }
                     "removed"
                 }
-                Ok(_) => {
+                Some(_) => {
                     kept += 1;
                     "kept"
                 }
             };
             write_entry(&mut out, verb, &f.path, &root)?;
+            let what = if f.section { " section" } else { "" };
             if verb == "kept" {
-                writeln!(out, "  (edited since install; --force to remove)")?;
+                writeln!(out, "{what}  (edited since install; --force to remove)")?;
             } else {
-                writeln!(out)?;
+                writeln!(out, "{what}")?;
             }
         }
         if !opts.dry_run {
@@ -294,11 +311,18 @@ fn select<'a>(all: &'a [Agent], id: &str, home: &Path) -> anyhow::Result<Vec<&'a
         .ok_or_else(|| anyhow::anyhow!("unknown agent `{id}`; expected {} or all", ids()))
 }
 
-fn decide(path: &Path, hash: &str, manifest: &Manifest, force: bool) -> anyhow::Result<Action> {
-    let existing = match fs::read(path) {
-        Ok(bytes) => content_hash(&bytes),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Action::Create),
-        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
+/// What to do with the file at `path`, or with its rustgrade section.
+fn decide(
+    path: &Path,
+    hash: &str,
+    manifest: &Manifest,
+    force: bool,
+    section: bool,
+) -> anyhow::Result<Action> {
+    let Some(existing) = agents::current_hash(path, section)
+        .with_context(|| format!("reading {}", path.display()))?
+    else {
+        return Ok(Action::Create);
     };
     Ok(if existing == hash {
         Action::Unchanged
@@ -310,33 +334,98 @@ fn decide(path: &Path, hash: &str, manifest: &Manifest, force: bool) -> anyhow::
     })
 }
 
-/// Removes files a previous install of this agent wrote that the current
-/// version no longer ships, if unedited and not owned by another agent.
+/// Adds or updates the rustgrade section in the instructions file at `path`.
+/// Returns its manifest record, or `None` if an edited section was kept.
+fn install_section(
+    out: &mut impl Write,
+    path: &Path,
+    root: &Path,
+    manifest: &Manifest,
+    opts: &Options<'_>,
+) -> anyhow::Result<Option<FileRecord>> {
+    let block = agents::instructions_block();
+    let hash = content_hash(block.as_bytes());
+    let action = decide(path, &hash, manifest, opts.force, true)?;
+    if matches!(action, Action::Create | Action::Update) && !opts.dry_run {
+        write_section(path, &block)?;
+    }
+    let verb = match action {
+        Action::Create => "added",
+        Action::Update => "updated",
+        Action::Unchanged => "unchanged",
+        Action::Conflict => "kept",
+    };
+    write_entry(out, verb, path, root)?;
+    if action == Action::Conflict {
+        writeln!(out, " section  (edited by you; --force to replace)")?;
+        return Ok(None);
+    }
+    writeln!(out, " section")?;
+    Ok(Some(FileRecord {
+        path: path.to_path_buf(),
+        hash,
+        section: true,
+    }))
+}
+
+/// Adds or replaces the rustgrade section in `path`, creating the file if needed.
+fn write_section(path: &Path, block: &str) -> anyhow::Result<()> {
+    let existing = match fs::read_to_string(path) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
+    };
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    }
+    fs::write(path, section::upsert(existing.as_deref(), block))
+        .with_context(|| format!("writing {}", path.display()))
+}
+
+/// Removes what rustgrade owns at `f`: the whole file, or only its section
+/// (and the file too if nothing else is left in it).
+fn remove_owned(f: &FileRecord, root: &Path) -> anyhow::Result<()> {
+    if f.section {
+        let text =
+            fs::read_to_string(&f.path).with_context(|| format!("reading {}", f.path.display()))?;
+        let rest = section::remove(&text);
+        if !rest.trim().is_empty() {
+            return fs::write(&f.path, rest)
+                .with_context(|| format!("writing {}", f.path.display()));
+        }
+    }
+    fs::remove_file(&f.path).with_context(|| format!("removing {}", f.path.display()))?;
+    prune_empty_parents(&f.path, root);
+    Ok(())
+}
+
+/// Removes what a previous install of this agent wrote that the current one
+/// no longer ships (files, or a section after `--no-instructions`), if
+/// unedited and not owned by another agent.
 fn remove_stale(
     out: &mut impl Write,
     manifest: &Manifest,
     agent: &Agent,
     root: &Path,
-    planned: &[(PathBuf, Cow<'static, str>)],
+    shipped: &[&Path],
     opts: &Options<'_>,
 ) -> anyhow::Result<()> {
     let Some(prev) = manifest.find(&agent.id, root) else {
         return Ok(());
     };
     for f in &prev.files {
-        let still_shipped = planned.iter().any(|(p, _)| *p == f.path);
+        let still_shipped = shipped.contains(&f.path.as_path());
         if still_shipped || manifest.shared_with_others(&f.path, &agent.id, root) {
             continue;
         }
-        let unedited = fs::read(&f.path).is_ok_and(|b| content_hash(&b) == f.hash);
+        let unedited = agents::current_hash(&f.path, f.section)
+            .is_ok_and(|h| h.as_deref() == Some(f.hash.as_str()));
         if unedited {
             if !opts.dry_run {
-                fs::remove_file(&f.path)
-                    .with_context(|| format!("removing {}", f.path.display()))?;
-                prune_empty_parents(&f.path, root);
+                remove_owned(f, root)?;
             }
             write_entry(out, "removed", &f.path, root)?;
-            writeln!(out)?;
+            writeln!(out, "{}", if f.section { " section" } else { "" })?;
         }
     }
     Ok(())

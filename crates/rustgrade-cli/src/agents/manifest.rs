@@ -31,7 +31,11 @@ pub struct Install {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileRecord {
     pub path: PathBuf,
+    /// Hash of the whole file, or of the section for `section` records.
     pub hash: String,
+    /// rustgrade owns only its marked section of this file (`CLAUDE.md`, ...).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub section: bool,
 }
 
 impl Manifest {

@@ -4,6 +4,7 @@
 mod assets;
 mod convert;
 pub mod manifest;
+pub mod section;
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
@@ -11,7 +12,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
-use assets::{COMMANDS, SKILL};
+use assets::{COMMANDS, INSTRUCTIONS, SKILL};
 use convert::{Command, Format};
 
 #[derive(Debug, Deserialize)]
@@ -34,6 +35,12 @@ pub struct Agent {
     /// How `commands/*.md` is translated for this agent.
     #[serde(default)]
     pub commands_format: Format,
+    /// Instructions file for `--scope project` that gets the rustgrade section.
+    #[serde(default)]
+    pub instructions_file: Option<String>,
+    /// Instructions file for `--scope user`; `None`: none at user scope.
+    #[serde(default)]
+    pub user_instructions_file: Option<String>,
 }
 
 impl Agent {
@@ -43,6 +50,36 @@ impl Agent {
             Scope::User => self.user_commands_dir.as_deref(),
         }
     }
+
+    /// Where the rustgrade section goes under `root`, if the agent has an
+    /// instructions file at this scope.
+    pub fn instructions_path(&self, root: &Path, scope: Scope) -> Option<PathBuf> {
+        let rel = match scope {
+            Scope::Project => self.instructions_file.as_deref(),
+            Scope::User => self.user_instructions_file.as_deref(),
+        };
+        rel.map(|r| join_rel(root, r))
+    }
+}
+
+/// The rustgrade section, markers included.
+pub fn instructions_block() -> String {
+    section::block(INSTRUCTIONS)
+}
+
+/// Hash of what rustgrade owns at `path` now: the whole file, or only the
+/// section for `section` records. `None` when the file or section is gone.
+pub fn current_hash(path: &Path, section: bool) -> std::io::Result<Option<String>> {
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    if !section {
+        return Ok(Some(content_hash(&bytes)));
+    }
+    let text = String::from_utf8_lossy(&bytes);
+    Ok(section::extract(&text).map(|b| content_hash(b.as_bytes())))
 }
 
 #[derive(Deserialize)]

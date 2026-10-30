@@ -57,6 +57,9 @@ pub const COMMANDS: &[Asset] = &[
 
 pub const TARGETS: &str = include_str!("../../assets/targets.toml");
 
+/// The rustgrade section `install` adds to each agent's instructions file.
+pub const INSTRUCTIONS: &str = include_str!("../../assets/instructions.md");
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -153,12 +156,13 @@ mod tests {
                 }
             }
         }
-        let targets = repo.join("targets/targets.toml");
-        let targets_copy = assets.join("targets.toml");
-        if update {
-            copy(&targets, &targets_copy);
-        } else if fs::read(&targets).ok() != fs::read(&targets_copy).ok() {
-            stale.push("targets/targets.toml".into());
+        for name in ["targets.toml", "instructions.md"] {
+            let (original, mirrored) = (repo.join("targets").join(name), assets.join(name));
+            if update {
+                copy(&original, &mirrored);
+            } else if fs::read(&original).ok() != fs::read(&mirrored).ok() {
+                stale.push(format!("targets/{name}"));
+            }
         }
         assert!(
             stale.is_empty(),
