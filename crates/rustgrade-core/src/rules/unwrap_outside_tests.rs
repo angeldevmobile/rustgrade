@@ -1,6 +1,7 @@
+use syn::spanned::Spanned;
 use syn::visit::{self, Visit};
 
-use super::common::{is_test_only, is_test_path};
+use super::common::{comments_above, is_test_only, is_test_path};
 use super::{FileContext, Rule};
 use crate::finding::{Category, Finding, Severity, Span};
 
@@ -33,9 +34,12 @@ impl Rule for UnwrapOutsideTests {
         if is_test_path(ctx.path) {
             return;
         }
+        let lines: Vec<&str> = ctx.source.lines().collect();
         let mut v = Visitor {
             rule: self,
             path: ctx.path,
+            lines: &lines,
+            stmt_lines: Vec::new(),
             out,
         };
         v.visit_file(ctx.ast);
@@ -45,10 +49,82 @@ impl Rule for UnwrapOutsideTests {
 struct Visitor<'a, 'o> {
     rule: &'a UnwrapOutsideTests,
     path: &'a str,
+    lines: &'a [&'a str],
+    /// Start line of each enclosing statement, innermost last.
+    stmt_lines: Vec<usize>,
     out: &'o mut Vec<Finding>,
 }
 
+impl Visitor<'_, '_> {
+    /// A comment at the end of the call's line, above it, or above its
+    /// statement that says why it cannot fail.
+    fn is_justified(&self, call: proc_macro2::Span) -> bool {
+        let end = call.end();
+        let trailing = end
+            .line
+            .checked_sub(1)
+            .and_then(|i| self.lines.get(i))
+            .and_then(|l| l.char_indices().nth(end.column).map(|(i, _)| &l[i..]))
+            .and_then(|rest| rest.find("//").map(|c| &rest[c..]));
+        trailing.is_some_and(explains_why)
+            || [call.start().line, end.line]
+                .into_iter()
+                .chain(self.stmt_lines.last().copied())
+                .any(|line| comments_above(self.lines, line).any(explains_why))
+    }
+}
+
+/// `m.lock()`, `rw.read()`, `rw.write()` (no arguments, unlike `io::Read`) or
+/// `cvar.wait*(guard, ..)`: their only error is a poisoned lock.
+fn is_lock_poisoning(receiver: &syn::Expr) -> bool {
+    let syn::Expr::MethodCall(inner) = receiver else {
+        return false;
+    };
+    match inner.method.to_string().as_str() {
+        "lock" | "read" | "write" => inner.args.is_empty(),
+        "wait" | "wait_while" | "wait_timeout" | "wait_timeout_while" => !inner.args.is_empty(),
+        _ => false,
+    }
+}
+
+/// Words that show a comment argues the call cannot fail ("this unwrap is OK
+/// since...", "invariant: non-empty", "checked above"), rather than describing
+/// what the code does.
+fn explains_why(comment: &str) -> bool {
+    const WORDS: &[&str] = &[
+        "unwrap",
+        "expect",
+        "panic",
+        "panics",
+        "invariant",
+        "infallible",
+        "cannot",
+        "can't",
+        "never",
+        "always",
+        "guaranteed",
+        "guarantees",
+        "ok",
+        "okay",
+        "safe",
+        "checked",
+        "validated",
+        "impossible",
+        "unreachable",
+    ];
+    comment
+        .to_ascii_lowercase()
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '\''))
+        .any(|w| WORDS.contains(&w))
+}
+
 impl<'ast> Visit<'ast> for Visitor<'_, '_> {
+    fn visit_stmt(&mut self, s: &'ast syn::Stmt) {
+        self.stmt_lines.push(s.span().start().line);
+        visit::visit_stmt(self, s);
+        self.stmt_lines.pop();
+    }
+
     fn visit_item_mod(&mut self, m: &'ast syn::ItemMod) {
         if !is_test_only(&m.attrs) {
             visit::visit_item_mod(self, m);
@@ -81,15 +157,43 @@ impl<'ast> Visit<'ast> for Visitor<'_, '_> {
             _ => None,
         };
         if let Some(severity) = severity {
+            let span = call
+                .method
+                .span()
+                .join(call.paren_token.span.close())
+                .unwrap_or(call.method.span());
+            let (severity, message, help) = if is_lock_poisoning(&call.receiver) {
+                (
+                    Severity::Low,
+                    format!(
+                        "`.{}()` on a lock result panics only if another thread panicked holding it",
+                        call.method
+                    ),
+                    "propagating the poisoning panic is the std convention; recover with `PoisonError::into_inner` if the data stays valid",
+                )
+            } else if self.is_justified(span) {
+                (
+                    Severity::Low,
+                    format!(
+                        "`.{}()` panics on the error path (a comment says why it cannot)",
+                        call.method
+                    ),
+                    "fine if the comment holds; `.expect(\"why\")` puts the reason in the panic message",
+                )
+            } else {
+                (
+                    severity,
+                    format!("`.{}()` panics on the error path", call.method),
+                    "propagate with `?`, handle the error, or document why it cannot fail",
+                )
+            };
             self.out.push(Finding {
                 rule: self.rule.id(),
                 severity,
                 category: self.rule.category(),
-                message: format!("`.{}()` panics on the error path", call.method),
+                message,
                 span: Span::from_proc_macro(self.path, call.method.span()),
-                help: Some(
-                    "propagate with `?`, handle the error, or document why it cannot fail".into(),
-                ),
+                help: Some(help.into()),
             });
         }
         visit::visit_expr_method_call(self, call);
@@ -100,6 +204,14 @@ const EXPLAIN: &str = r"Why: `.unwrap()` panics on the error path. In a request 
 library, one malformed input kills the thread or the process. `.expect()` is
 reported one level lower because its message documents an invariant, but it
 still panics. Tests, benches and examples are exempt.
+
+A comment at the end of the line, or directly above the call or its statement,
+that argues why it cannot fail (`// this unwrap is OK since the max is 512`,
+`// invariant: non-empty`, `// checked above`) lowers either one to `low`. A comment
+that only describes what the code does does not. Unwrapping a lock result
+(`m.lock().unwrap()`, `cvar.wait(g).unwrap()`) is `low` too: it only fails if
+another thread panicked holding the lock, and propagating that is the std
+convention.
 
 Before:
     let (name, age) = req.split_once(':').unwrap();
@@ -132,6 +244,66 @@ mod tests {
         );
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].severity, Severity::Medium);
+    }
+
+    #[test]
+    fn a_comment_saying_why_lowers_it_to_low() {
+        for src in [
+            "fn f() {
+                // This unwrap is OK since the max is 512.
+                g(x.unwrap());
+            }",
+            "fn f() {
+                let n = v.first().unwrap(); // non-empty: checked above
+            }",
+            r#"fn f() {
+                let n = v
+                    .iter()
+                    .max()
+                    // invariant: v is never empty
+                    .expect("non-empty");
+            }"#,
+        ] {
+            let found = run(&UnwrapOutsideTests, src);
+            assert_eq!(found.len(), 1, "{src}");
+            assert_eq!(found[0].severity, Severity::Low, "{src}");
+            assert!(found[0].message.contains("a comment says why"), "{src}");
+        }
+    }
+
+    #[test]
+    fn lock_poisoning_is_low() {
+        let src = "fn f() {
+            let a = m.lock().unwrap();
+            let b = rw.read().unwrap();
+            let c = rw.write().expect(\"not poisoned\");
+            let d = cvar.wait(guard).unwrap();
+            let e = file.read(&mut buf).unwrap();
+        }";
+        let severities: Vec<_> = run(&UnwrapOutsideTests, src)
+            .iter()
+            .map(|f| f.severity)
+            .collect();
+        let low = Severity::Low;
+        assert_eq!(severities, [low, low, low, low, Severity::High]);
+    }
+
+    #[test]
+    fn a_comment_that_only_describes_does_not_count() {
+        let src = "fn f() {
+            // parse the header
+            let h = parse(buf).unwrap();
+        }";
+        assert_eq!(run(&UnwrapOutsideTests, src)[0].severity, Severity::High);
+        let blank_line = "fn f() {
+            // checked above
+
+            let h = parse(buf).unwrap();
+        }";
+        assert_eq!(
+            run(&UnwrapOutsideTests, blank_line)[0].severity,
+            Severity::High
+        );
     }
 
     #[test]

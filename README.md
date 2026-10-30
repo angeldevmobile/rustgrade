@@ -44,7 +44,7 @@ one crate is deleted and nothing else changes. A new protocol is one new adapter
 
 ## Quick start
 
-**Available now (v0.2):**
+**Available now (v0.3):**
 
 ```bash
 # CLI (--locked uses the dependency versions CI tested)
@@ -135,20 +135,23 @@ rustgrade audit: B (89), capped by 1 high finding
 
   Tests    1 passed, 0 failed
   Clippy   0 warning(s), pedantic
-  Scanner  2 finding(s), 0 suppressed, 1 file(s)
+  Scanner  2 finding(s), 0 suppressed, 1 file(s), 11 lines of code
 ```
 
-Areas that don't apply are left out of the average; one high finding caps the grade
-at B, two at C, a critical one or failing tests at D, and a crate that does not
-compile is an F. The full rubric is in
+Areas that don't apply are left out of the average. Findings are weighed per 1000
+lines of code, so a large crate isn't graded on raw counts: one high finding per
+1000 lines caps the grade at B, two at C; a critical finding or failing tests cap it
+at D, and a crate that does not compile is an F. On 15 popular crates (tokio, serde,
+regex, syn, ...) the scanner-only grades range from A to C; see
+[evals/real-world/RESULTS.md](evals/real-world/RESULTS.md). The full rubric is in
 [skills/rustgrade/references/rubric.md](skills/rustgrade/references/rubric.md).
 
 #### Rules
 
 | ID | Severity | Flags |
 |---|---|---|
-| `undocumented-unsafe` | critical | `unsafe` block or impl without a `// SAFETY:` comment |
-| `unwrap-outside-tests` | high (`expect`: medium) | `.unwrap()` / `.expect()` outside tests |
+| `undocumented-unsafe` | medium (low in tests) | `unsafe` block or impl without a `// SAFETY:` comment (any case; an `unsafe fn`'s `# Safety` docs cover its body) |
+| `unwrap-outside-tests` | high (`expect`: medium; low with a comment saying why, or on a lock) | `.unwrap()` / `.expect()` outside tests |
 | `lock-across-await` | high | std / parking_lot guard alive at an `.await` |
 | `unbounded-channel` | medium | `unbounded_channel()`, `unbounded()`, `std::sync::mpsc::channel()` |
 | `anyhow-in-lib-api` | medium | public library fn returning `anyhow` errors |

@@ -1,6 +1,8 @@
 # Unsafe code
 
-Rule: `undocumented-unsafe` (critical).
+Rule: `undocumented-unsafe` (medium; `low` in test code). `// SAFETY:` in any
+case counts, and blocks inside an `unsafe fn` are covered by its
+`/// # Safety` section.
 
 `unsafe` does not turn off the borrow checker; it lets you do five extra
 things (dereference raw pointers, call `unsafe fn`, access `static mut`,

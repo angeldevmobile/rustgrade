@@ -8,20 +8,6 @@
       "rule": "unwrap-outside-tests",
       "severity": "high",
       "span": {
-        "column": 41,
-        "end_column": 47,
-        "end_line": 21,
-        "file": "src/main.rs",
-        "line": 21
-      }
-    },
-    {
-      "category": "errors",
-      "help": "propagate with `?`, handle the error, or document why it cannot fail",
-      "message": "`.unwrap()` panics on the error path",
-      "rule": "unwrap-outside-tests",
-      "severity": "high",
-      "span": {
         "column": 32,
         "end_column": 38,
         "end_line": 22,
@@ -58,20 +44,6 @@
       }
     },
     {
-      "category": "errors",
-      "help": "propagate with `?`, handle the error, or document why it cannot fail",
-      "message": "`.unwrap()` panics on the error path",
-      "rule": "unwrap-outside-tests",
-      "severity": "high",
-      "span": {
-        "column": 40,
-        "end_column": 46,
-        "end_line": 13,
-        "file": "src/server.rs",
-        "line": 13
-      }
-    },
-    {
       "category": "concurrency",
       "help": "release it before awaiting (scope it in a block or `drop(guard)`), or use an async lock (`tokio::sync::Mutex`, `.lock().await`) if it must be held",
       "message": "temporary guard in scrutinee from `.lock()` is held across the `.await` on line 25",
@@ -83,34 +55,6 @@
         "end_line": 24,
         "file": "src/server.rs",
         "line": 24
-      }
-    },
-    {
-      "category": "errors",
-      "help": "propagate with `?`, handle the error, or document why it cannot fail",
-      "message": "`.unwrap()` panics on the error path",
-      "rule": "unwrap-outside-tests",
-      "severity": "high",
-      "span": {
-        "column": 30,
-        "end_column": 36,
-        "end_line": 24,
-        "file": "src/server.rs",
-        "line": 24
-      }
-    },
-    {
-      "category": "errors",
-      "help": "propagate with `?`, handle the error, or document why it cannot fail",
-      "message": "`.unwrap()` panics on the error path",
-      "rule": "unwrap-outside-tests",
-      "severity": "high",
-      "span": {
-        "column": 44,
-        "end_column": 50,
-        "end_line": 33,
-        "file": "src/server.rs",
-        "line": 33
       }
     },
     {
@@ -153,6 +97,62 @@
         "end_line": 19,
         "file": "src/main.rs",
         "line": 19
+      }
+    },
+    {
+      "category": "errors",
+      "help": "propagating the poisoning panic is the std convention; recover with `PoisonError::into_inner` if the data stays valid",
+      "message": "`.unwrap()` on a lock result panics only if another thread panicked holding it",
+      "rule": "unwrap-outside-tests",
+      "severity": "low",
+      "span": {
+        "column": 41,
+        "end_column": 47,
+        "end_line": 21,
+        "file": "src/main.rs",
+        "line": 21
+      }
+    },
+    {
+      "category": "errors",
+      "help": "propagating the poisoning panic is the std convention; recover with `PoisonError::into_inner` if the data stays valid",
+      "message": "`.unwrap()` on a lock result panics only if another thread panicked holding it",
+      "rule": "unwrap-outside-tests",
+      "severity": "low",
+      "span": {
+        "column": 40,
+        "end_column": 46,
+        "end_line": 13,
+        "file": "src/server.rs",
+        "line": 13
+      }
+    },
+    {
+      "category": "errors",
+      "help": "propagating the poisoning panic is the std convention; recover with `PoisonError::into_inner` if the data stays valid",
+      "message": "`.unwrap()` on a lock result panics only if another thread panicked holding it",
+      "rule": "unwrap-outside-tests",
+      "severity": "low",
+      "span": {
+        "column": 30,
+        "end_column": 36,
+        "end_line": 24,
+        "file": "src/server.rs",
+        "line": 24
+      }
+    },
+    {
+      "category": "errors",
+      "help": "propagating the poisoning panic is the std convention; recover with `PoisonError::into_inner` if the data stays valid",
+      "message": "`.unwrap()` on a lock result panics only if another thread panicked holding it",
+      "rule": "unwrap-outside-tests",
+      "severity": "low",
+      "span": {
+        "column": 44,
+        "end_column": 50,
+        "end_line": 33,
+        "file": "src/server.rs",
+        "line": 33
       }
     }
   ],

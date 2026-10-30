@@ -5,7 +5,7 @@ use crate::finding::{Category, Finding, Severity};
 mod alloc_in_loop;
 mod anyhow_in_lib_api;
 mod clone_in_loop;
-mod common;
+pub(crate) mod common;
 mod lock_across_await;
 mod ref_owned_param;
 mod unbounded_channel;

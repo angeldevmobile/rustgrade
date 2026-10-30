@@ -55,7 +55,7 @@ pub fn run(path: Option<&Path>, opts: &Options, globals: &Globals) -> anyhow::Re
             println!("{}", serde_json::to_string_pretty(&value)?);
         }
         Format::Sarif => {
-            let grade = sarif_properties(&outcome);
+            let grade = sarif_properties(&report, &outcome);
             sarif::write(&sarif::to_sarif(&report, root, Some(grade)))?;
         }
         Format::Text | Format::Markdown => {
@@ -108,7 +108,7 @@ fn grade_crate(report: &Report, manifest: &Path, opts: &Options) -> anyhow::Resu
         applicable.push(Area::Concurrency);
     }
     let tests_failed = tests.as_ref().is_some_and(|t| !t.ok);
-    let card = score::grade(&issues, &applicable, tests_failed);
+    let card = score::grade(&issues, &applicable, tests_failed, report.usage.code_lines);
 
     Ok(Outcome::Graded {
         card,
@@ -153,6 +153,8 @@ fn to_json(report: &Report, outcome: &Outcome) -> serde_json::Value {
                 "grade": card.grade,
                 "score": card.score,
                 "cap": card.cap,
+                "code_lines": report.usage.code_lines,
+                "highs_per_kloc": round1(card.highs_per_kloc),
                 "areas": card.areas,
                 "tests": tests,
                 "clippy": clippy,
@@ -164,7 +166,7 @@ fn to_json(report: &Report, outcome: &Outcome) -> serde_json::Value {
 
 /// The grade rides on the SARIF run; clippy warnings carry no location, so
 /// only their count goes along.
-fn sarif_properties(outcome: &Outcome) -> serde_json::Value {
+fn sarif_properties(report: &Report, outcome: &Outcome) -> serde_json::Value {
     match outcome {
         Outcome::DoesNotCompile { error } => json!({
             "grade": "F",
@@ -180,6 +182,7 @@ fn sarif_properties(outcome: &Outcome) -> serde_json::Value {
             "grade": card.grade,
             "score": card.score,
             "cap": card.cap,
+            "codeLines": report.usage.code_lines,
             "clippyWarnings": clippy.as_ref().map(Vec::len),
             "tests": tests.as_ref().map(test_status),
         }),
@@ -204,10 +207,18 @@ fn render_text(report: &Report, outcome: &Outcome, min: Option<Severity>) -> io:
 
     write!(out, "rustgrade audit: {:?} ({})", card.grade, card.score)?;
     let highs = count(&report.findings, Severity::High);
+    let plural = if highs == 1 { "" } else { "s" };
+    // Small crates are graded on counts; only large ones need the ratio.
+    let density = if report.usage.code_lines > 1000 {
+        format!(" ({:.1} per 1000 lines)", card.highs_per_kloc)
+    } else {
+        String::new()
+    };
     match card.cap {
         None => writeln!(out)?,
-        Some(Cap::OneHigh) => writeln!(out, ", capped by 1 high finding")?,
-        Some(Cap::ManyHigh) => writeln!(out, ", capped by {highs} high findings")?,
+        Some(Cap::OneHigh | Cap::ManyHigh) => {
+            writeln!(out, ", capped by {highs} high finding{plural}{density}")?;
+        }
         Some(Cap::Critical) => writeln!(out, ", capped by a critical finding")?,
         Some(Cap::TestsFailing) => writeln!(out, ", capped by failing tests")?,
     }
@@ -259,10 +270,11 @@ fn render_text(report: &Report, outcome: &Outcome, min: Option<Severity>) -> io:
     }
     writeln!(
         out,
-        "  Scanner  {} finding(s), {} suppressed, {} file(s)",
+        "  Scanner  {} finding(s), {} suppressed, {} file(s), {} lines of code",
         report.findings.len(),
         report.suppressed.len(),
-        report.files_scanned
+        report.files_scanned,
+        report.usage.code_lines
     )?;
 
     let shown = report
@@ -355,4 +367,9 @@ fn test_status(t: &Tests) -> &'static str {
         (false, 0) => "did-not-build",
         (false, _) => "failed",
     }
+}
+
+/// One decimal, for JSON readers.
+fn round1(x: f64) -> f64 {
+    (x * 10.0).round() / 10.0
 }

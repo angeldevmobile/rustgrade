@@ -2,10 +2,23 @@
 
 use syn::visit::{self, Visit};
 
-/// Integration tests, benches and examples are not production code.
+/// Integration tests, benches and examples are not production code, nor are
+/// `tests.rs` / `test.rs` files (the usual `#[cfg(test)] mod tests;`).
 pub fn is_test_path(path: &str) -> bool {
     path.split('/')
-        .any(|c| matches!(c, "tests" | "benches" | "examples"))
+        .any(|c| matches!(c, "tests" | "benches" | "examples" | "tests.rs" | "test.rs"))
+}
+
+/// The run of comment and attribute lines directly above 1-based `line`,
+/// nearest first and trimmed. A blank line or code ends the run.
+pub fn comments_above<'a>(lines: &'a [&'a str], line: usize) -> impl Iterator<Item = &'a str> {
+    lines[..line.saturating_sub(1).min(lines.len())]
+        .iter()
+        .rev()
+        .map(|l| l.trim_start())
+        .take_while(|l| {
+            l.starts_with("//") || l.starts_with("/*") || l.starts_with('*') || l.starts_with("#[")
+        })
 }
 
 /// `#[test]`, `#[tokio::test]`, `#[cfg(test)]` or `#[cfg(all(test, ...))]`.

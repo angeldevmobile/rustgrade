@@ -2,20 +2,6 @@
   "files_scanned": 1,
   "findings": [
     {
-      "category": "unsafe",
-      "help": "state the invariants that make this sound, e.g. `// SAFETY: idx < len, checked above`",
-      "message": "`unsafe` block without a `// SAFETY:` comment",
-      "rule": "undocumented-unsafe",
-      "severity": "critical",
-      "span": {
-        "column": 5,
-        "end_column": 11,
-        "end_line": 23,
-        "file": "src/lib.rs",
-        "line": 23
-      }
-    },
-    {
       "category": "performance",
       "help": "borrow instead, hoist the clone out of the loop, or use `Arc::clone(&x)` if it is a cheap refcount bump",
       "message": "`.clone()` runs on every iteration",
@@ -55,6 +41,20 @@
         "end_line": 15,
         "file": "src/lib.rs",
         "line": 15
+      }
+    },
+    {
+      "category": "unsafe",
+      "help": "state the invariants that make this sound, e.g. `// SAFETY: idx < len, checked above`",
+      "message": "`unsafe` block without a `// SAFETY:` comment",
+      "rule": "undocumented-unsafe",
+      "severity": "medium",
+      "span": {
+        "column": 5,
+        "end_column": 11,
+        "end_line": 23,
+        "file": "src/lib.rs",
+        "line": 23
       }
     }
   ],

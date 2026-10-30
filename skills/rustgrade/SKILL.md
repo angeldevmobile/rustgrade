@@ -74,7 +74,7 @@ Findings arrive sorted by severity, then location.
 | ID | Category | Flags |
 |---|---|---|
 | `undocumented-unsafe` | unsafe | `unsafe` block or impl without `// SAFETY:` |
-| `unwrap-outside-tests` | errors | `.unwrap()` (high) / `.expect()` (medium) outside tests |
+| `unwrap-outside-tests` | errors | `.unwrap()` (high) / `.expect()` (medium) outside tests; `low` with a comment saying why it cannot fail, or on a lock result |
 | `lock-across-await` | concurrency | sync lock guard alive at an `.await` |
 | `unbounded-channel` | concurrency | `unbounded_channel()`, `unbounded()`, `std::sync::mpsc::channel()` |
 | `anyhow-in-lib-api` | errors | public library fn returning `anyhow` errors |

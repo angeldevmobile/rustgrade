@@ -92,7 +92,10 @@ pub fn scan_file(file: &SourceFile<'_>, config: &Config) -> Result<FileReport, S
     Ok(FileReport {
         findings,
         suppressed,
-        usage: usage::detect(&ast),
+        usage: Usage {
+            code_lines: usage::code_lines(file.path, file.source, &ast),
+            ..usage::detect(&ast)
+        },
     })
 }
 

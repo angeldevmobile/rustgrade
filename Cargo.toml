@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/rustgrade-core", "crates/rustgrade-cli", "crates/rustgrade-mcp"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "MIT"
 rust-version = "1.88"  # let-chains
@@ -12,8 +12,8 @@ keywords = ["rust", "lint", "code-review", "static-analysis", "ai"]
 
 [workspace.dependencies]
 # crates.io needs a version next to `path`; keep it equal to `version` above.
-rustgrade-core = { path = "crates/rustgrade-core", version = "0.2.0" }
-rustgrade-mcp = { path = "crates/rustgrade-mcp", version = "0.2.0" }
+rustgrade-core = { path = "crates/rustgrade-core", version = "0.3.0" }
+rustgrade-mcp = { path = "crates/rustgrade-mcp", version = "0.3.0" }
 syn = { version = "2", features = ["full", "visit", "extra-traits"] }
 proc-macro2 = { version = "1", features = ["span-locations"] }
 serde = { version = "1", features = ["derive"] }

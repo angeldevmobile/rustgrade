@@ -11,6 +11,43 @@ installed plugin when that version changes.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-29
+
+Calibrated on real code: rules and rubric tuned against 15 popular crates.
+
+### Added
+
+- `evals/real-world/`: rustgrade over 15 popular crates (tokio, serde, regex,
+  syn, ...), pinned in `crates.txt`; `run.py` downloads them and writes
+  `RESULTS.md` (findings by severity, per 1k lines, scanner-only grade).
+
+### Changed
+
+- **Rubric v2: graded per 1000 lines of code.** Deductions are divided by the
+  crate's production code size (no blanks, comments or tests; minimum 1000
+  lines), and the high caps are densities: at least 1 high per 1000 lines caps
+  at B, 2 at C. Crates under 1000 lines grade exactly as before. `audit`
+  reports `code_lines` and `highs_per_kloc`.
+- `undocumented-unsafe` is `medium`, not `critical`: a missing comment is a
+  review gap, not proof of unsoundness (clippy keeps the lint opt-in).
+  `critical` is left for findings that are likely unsound.
+- `unwrap-outside-tests`: `low` when a comment at the end of the line or right
+  above it says why it cannot fail ("this unwrap is OK since...", "invariant:",
+  "checked above"), and for unwrapping a lock result (`m.lock().unwrap()`,
+  `cvar.wait(g).unwrap()`), which only fails if another thread panicked.
+- On the 15 real-world crates: from 13 D and 2 C to 5 A, 5 B and 5 C. The Cs
+  (regex-automata, rand, crossbeam-channel, parking_lot, ignore) have 2.4–5
+  unexplained unwraps per 1000 lines.
+
+### Fixed
+
+- `undocumented-unsafe`: `// Safety:` and `// safety:` count, like clippy
+  (only `SAFETY:` did). Blocks inside an `unsafe fn` are covered by its
+  `/// # Safety` section, or when the block is the whole body (the wrapper
+  edition 2024 requires). In test code the finding is `low`, not `critical`.
+  Together: 39% fewer critical findings on the real-world crates.
+- `tests.rs` / `test.rs` files count as test code for every rule.
+
 ## [0.2.0] - 2026-10-29
 
 First release on crates.io (`rustgrade`, `rustgrade-core`).

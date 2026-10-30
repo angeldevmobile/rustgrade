@@ -79,7 +79,9 @@ impl Area {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Cap {
+    /// At least one `high` finding per 1000 lines of code.
     OneHigh,
+    /// At least two `high` findings per 1000 lines of code.
     ManyHigh,
     Critical,
     TestsFailing,
@@ -110,10 +112,16 @@ pub struct Scorecard {
     pub areas: Vec<AreaScore>,
     /// The cap that lowered the score, if any.
     pub cap: Option<Cap>,
+    /// `high` findings per 1000 lines of code, what the high caps look at.
+    pub highs_per_kloc: f64,
 }
 
 /// Most one rule can deduct from one area.
 const PER_RULE_LIMIT: u32 = 30;
+
+/// Deductions and high caps are per this many lines of code; smaller crates
+/// count as this size, so they are graded on raw counts.
+const SIZE_UNIT: u32 = 1000;
 
 fn deduction(severity: Severity) -> u32 {
     match severity {
@@ -149,14 +157,28 @@ impl<'a> From<&'a Finding> for Deduction<'a> {
 ///
 /// `applicable` lists the optional areas the crate uses (`Unsafe`,
 /// `Concurrency`); an area with deductions is always applicable.
+/// `code_lines` is the crate's production code size ([`crate::Usage`]):
+/// findings are weighed per 1000 lines, so a large crate is not graded on
+/// raw counts.
 #[must_use]
-pub fn grade(issues: &[Deduction<'_>], applicable: &[Area], tests_failed: bool) -> Scorecard {
+pub fn grade(
+    issues: &[Deduction<'_>],
+    applicable: &[Area],
+    tests_failed: bool,
+    code_lines: usize,
+) -> Scorecard {
+    let size = u32::try_from(code_lines).unwrap_or(u32::MAX).max(SIZE_UNIT);
+    // Per SIZE_UNIT lines, rounded to nearest. u64: raw * 1000 can exceed u32.
+    let per_unit =
+        |raw: u32| (u64::from(raw) * u64::from(SIZE_UNIT) + u64::from(size / 2)) / u64::from(size);
+
     let mut per_rule: HashMap<(Area, &str), u32> = HashMap::new();
     for i in issues {
         *per_rule.entry((Area::of(i.category), i.rule)).or_default() += deduction(i.severity);
     }
     let mut deducted: HashMap<Area, u32> = HashMap::new();
     for ((area, _), d) in per_rule {
+        let d = u32::try_from(per_unit(d)).unwrap_or(u32::MAX);
         *deducted.entry(area).or_default() += d.min(PER_RULE_LIMIT);
     }
 
@@ -188,9 +210,13 @@ pub fn grade(issues: &[Deduction<'_>], applicable: &[Area], tests_failed: bool) 
         .iter()
         .filter(|i| i.severity == Severity::High)
         .count();
+    // `highs / size >= n / SIZE_UNIT`, in integers.
+    let highs_at_least = |n: u64| {
+        u64::try_from(highs).unwrap_or(u64::MAX) * u64::from(SIZE_UNIT) >= n * u64::from(size)
+    };
     let caps = [
-        (highs == 1, Cap::OneHigh),
-        (highs >= 2, Cap::ManyHigh),
+        (highs > 0 && highs_at_least(1), Cap::OneHigh),
+        (highs > 0 && highs_at_least(2), Cap::ManyHigh),
         (
             issues.iter().any(|i| i.severity == Severity::Critical),
             Cap::Critical,
@@ -204,11 +230,14 @@ pub fn grade(issues: &[Deduction<'_>], applicable: &[Area], tests_failed: bool) 
         .min_by_key(|cap| cap.max_score());
     let score = cap.map_or(average, Cap::max_score);
 
+    #[allow(clippy::cast_precision_loss)] // a ratio for display, not arithmetic
+    let highs_per_kloc = highs as f64 * f64::from(SIZE_UNIT) / f64::from(size);
     Scorecard {
         score,
         grade: Grade::from_score(score),
         areas,
         cap,
+        highs_per_kloc,
     }
 }
 
@@ -224,6 +253,9 @@ mod tests {
         }
     }
 
+    /// Below `SIZE_UNIT`: graded on raw counts.
+    const SMALL: usize = 200;
+
     fn area(card: &Scorecard, area: Area) -> Option<u8> {
         card.areas
             .iter()
@@ -233,7 +265,7 @@ mod tests {
 
     #[test]
     fn clean_crate_is_a_100() {
-        let card = grade(&[], &[], false);
+        let card = grade(&[], &[], false, SMALL);
         assert_eq!((card.score, card.grade, card.cap), (100, Grade::A, None));
         assert_eq!(area(&card, Area::Unsafe), None);
     }
@@ -245,7 +277,7 @@ mod tests {
             finding("unwrap-outside-tests", Category::Errors, Severity::High),
             finding("unwrap-outside-tests", Category::Errors, Severity::Medium),
         ];
-        let card = grade(&findings, &[], false);
+        let card = grade(&findings, &[], false, SMALL);
         assert_eq!(area(&card, Area::Errors), Some(80));
         assert_eq!(area(&card, Area::Unsafe), None);
         assert_eq!(area(&card, Area::Concurrency), None);
@@ -260,15 +292,15 @@ mod tests {
     fn caps_get_stricter_with_more_and_worse_findings() {
         let high = || finding("lock-across-await", Category::Concurrency, Severity::High);
         assert_eq!(
-            grade(&[high(), high()], &[], false).cap,
+            grade(&[high(), high()], &[], false, SMALL).cap,
             Some(Cap::ManyHigh)
         );
 
-        let critical = finding("undocumented-unsafe", Category::Unsafe, Severity::Critical);
-        let card = grade(&[high(), critical], &[], false);
+        let critical = finding("judgment", Category::Unsafe, Severity::Critical);
+        let card = grade(&[high(), critical], &[], false, SMALL);
         assert_eq!((card.cap, card.grade), (Some(Cap::Critical), Grade::D));
 
-        let card = grade(&[], &[], true);
+        let card = grade(&[], &[], true, SMALL);
         assert_eq!((card.score, card.cap), (69, Some(Cap::TestsFailing)));
     }
 
@@ -282,14 +314,17 @@ mod tests {
             .collect();
         // alloc: 25, clone: 15 -> 60. Five more allocs would still be 60.
         assert_eq!(
-            area(&grade(&findings, &[], false), Area::Performance),
+            area(&grade(&findings, &[], false, SMALL), Area::Performance),
             Some(60)
         );
 
         let many: Vec<_> = (0..10)
             .map(|_| finding("alloc-in-loop", Category::Performance, Severity::Medium))
             .collect();
-        assert_eq!(area(&grade(&many, &[], false), Area::Performance), Some(70));
+        assert_eq!(
+            area(&grade(&many, &[], false, SMALL), Area::Performance),
+            Some(70)
+        );
     }
 
     #[test]
@@ -299,8 +334,8 @@ mod tests {
             Category::ApiDesign,
             Severity::Low,
         )];
-        let without = grade(&findings, &[], false);
-        let with = grade(&findings, &[Area::Unsafe, Area::Concurrency], false);
+        let without = grade(&findings, &[], false, SMALL);
+        let with = grade(&findings, &[Area::Unsafe, Area::Concurrency], false, SMALL);
         assert_eq!(area(&with, Area::Unsafe), Some(100));
         assert!(with.score >= without.score);
         assert_eq!(area(&with, Area::OwnershipApi), Some(98));
@@ -309,6 +344,40 @@ mod tests {
     #[test]
     fn meta_findings_land_in_errors() {
         let findings = [finding("unused-suppression", Category::Meta, Severity::Low)];
-        assert_eq!(area(&grade(&findings, &[], false), Area::Errors), Some(98));
+        assert_eq!(
+            area(&grade(&findings, &[], false, SMALL), Area::Errors),
+            Some(98)
+        );
+    }
+
+    #[test]
+    fn large_crates_are_graded_per_1000_lines() {
+        let unwraps: Vec<_> = (0..20)
+            .map(|_| finding("unwrap-outside-tests", Category::Errors, Severity::High))
+            .collect();
+        // 20 highs in 200 lines: errors at 70 (rule limit), capped at C.
+        let small = grade(&unwraps, &[], false, SMALL);
+        assert_eq!(
+            (area(&small, Area::Errors), small.cap),
+            (Some(70), Some(Cap::ManyHigh))
+        );
+
+        // The same 20 in 40k lines: 300 / 40 = 7.5 -> 8 deducted, 0.5 per 1k: no cap.
+        let large = grade(&unwraps, &[], false, 40_000);
+        assert_eq!((area(&large, Area::Errors), large.cap), (Some(92), None));
+        assert!((large.highs_per_kloc - 0.5).abs() < f64::EPSILON);
+
+        // 1 per 1k caps at B, 2 per 1k at C.
+        assert_eq!(grade(&unwraps, &[], false, 20_000).cap, Some(Cap::OneHigh));
+        assert_eq!(grade(&unwraps, &[], false, 10_000).cap, Some(Cap::ManyHigh));
+    }
+
+    #[test]
+    fn critical_caps_regardless_of_size() {
+        let critical = [finding("judgment", Category::Unsafe, Severity::Critical)];
+        assert_eq!(
+            grade(&critical, &[], false, 1_000_000).cap,
+            Some(Cap::Critical)
+        );
     }
 }

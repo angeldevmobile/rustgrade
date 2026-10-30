@@ -13,7 +13,9 @@ what judgment findings would do to the grade.
    Ownership & API. A lint reported for several targets at one location counts
    once.
 3. `cargo test`: pass / fail.
-4. Judgment findings from the review, each with a severity, marked
+4. Size: lines of production code (not blank, not comments, not tests:
+   `tests/`, `benches/`, `examples/`, `tests.rs` files, `#[cfg(test)]` items).
+5. Judgment findings from the review, each with a severity, marked
    `(judgment)`. They never change the CLI grade; the report states the grade
    they would produce.
 
@@ -32,7 +34,7 @@ average**. Counting it as 100 would let empty categories inflate the grade.
 
 ## Category score
 
-Start at 100 and subtract per finding:
+Start at 100 and subtract per finding, **per 1000 lines of code**:
 
 | Severity | Deduction |
 |---|---|
@@ -42,8 +44,11 @@ Start at 100 and subtract per finding:
 | low | 2 |
 | info | 0 |
 
-- One rule can deduct at most **30** from a category, so a single noisy rule
-  cannot sink a grade.
+- **Per 1000 lines:** a rule's total deduction is divided by the crate's size
+  in thousands of lines, with a minimum of 1. A crate under 1000 lines is
+  graded on raw counts; ten findings in 50 000 lines weigh like one in 5 000.
+- One rule can deduct at most **30** from a category (after the division), so
+  a single noisy rule cannot sink a grade.
 - Floor at 0.
 - `meta` findings (`invalid-suppression`, `unused-suppression`) are `low` and
   land in Correctness & errors: stale annotations rot.
@@ -64,19 +69,32 @@ Overall = weighted average of the **applicable** category scores, rounded.
 
 | Condition | Grade at most |
 |---|---|
-| one `high` finding | B (89) |
-| two or more `high` findings | C (79) |
-| any `critical` finding | D (69) |
+| at least 1 `high` finding per 1000 lines | B (89) |
+| at least 2 `high` findings per 1000 lines | C (79) |
+| any `critical` finding, whatever the size | D (69) |
 | failing tests | D (69) |
 | code does not compile | F: stop the audit and report the error |
 
-An A means no high or critical finding remains. A small crate with one panic
-on untrusted input is not an A, however clean the rest is.
+High caps use the same size rule, with a minimum of 1000 lines: in a crate
+under 1000 lines one high caps at B and two at C. A small crate with one panic
+on untrusted input is not an A, however clean the rest is; a 40 000-line crate
+with a handful of unexplained unwraps can be.
+
+`critical` is reserved for findings that are likely unsound or exploitable
+(none of the current scanner rules; judgment findings can be). A missing
+`// SAFETY:` comment is `medium`: a review gap, not proof of a bug.
+
+## Calibration
+
+`evals/real-world/` runs the scanner over popular crates (tokio, serde, regex,
+syn, ...) and records the grades in `RESULTS.md`. A change to rules or rubric
+that moves those grades must say why in the CHANGELOG.
 
 ## Example
 
 `evals/fixtures/unwrap-daemon`: one high (`.unwrap()` on request input), one
-medium (`.expect()` on request input). No `unsafe`, no concurrency.
+medium (`.expect()` on request input). No `unsafe`, no concurrency. Under 1000
+lines, so counts are used as they are.
 
 | Category | Score |
 |---|---|
