@@ -11,6 +11,15 @@ installed plugin when that version changes.
 
 ## [Unreleased]
 
+### Added
+
+- Prebuilt binaries on every GitHub release (`release.yml`, on `v*` tags):
+  Linux x86_64 / aarch64 (static, musl), macOS x86_64 / aarch64, Windows
+  x86_64, with SHA-256 checksums and notes from this file. Asset names carry no
+  version, so `releases/latest/download/rustgrade-<target>.tar.gz` always
+  works; `cargo binstall rustgrade` finds them. A `dist` profile (thin LTO,
+  stripped) makes them about a third smaller.
+
 ## [0.3.0] - 2026-10-29
 
 Calibrated on real code: rules and rubric tuned against 15 popular crates.

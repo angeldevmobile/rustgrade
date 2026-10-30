@@ -47,7 +47,9 @@ one crate is deleted and nothing else changes. A new protocol is one new adapter
 **Available now (v0.3):**
 
 ```bash
-# CLI (--locked uses the dependency versions CI tested)
+# CLI: prebuilt binary (Linux, macOS, Windows), nothing to compile
+cargo binstall rustgrade
+# or from source (--locked uses the dependency versions CI tested)
 cargo install --locked rustgrade
 # or the latest main: cargo install --locked --git https://github.com/angeldevmobile/rustgrade rustgrade
 
@@ -252,11 +254,17 @@ Gate on the grade (fails on C or worse):
 # .github/workflows/rustgrade.yml
 - uses: dtolnay/rust-toolchain@stable
   with: { components: clippy }
-- run: cargo install --locked rustgrade
+# Prebuilt static binary: seconds instead of compiling rustgrade.
+- run: curl -sSfL https://github.com/angeldevmobile/rustgrade/releases/latest/download/rustgrade-x86_64-unknown-linux-musl.tar.gz | tar -xz -C ~/.cargo/bin rustgrade
 - run: rustgrade audit --fail-on C
 ```
 
 Or, cheaper, only on scanner findings: `rustgrade scan --fail-on high`.
+
+Every [release](https://github.com/angeldevmobile/rustgrade/releases) has binaries
+for `x86_64` / `aarch64` Linux (static, musl), `x86_64` / `aarch64` macOS and
+`x86_64` Windows, with SHA-256 checksums. To pin a version, replace
+`latest/download` with `download/v0.3.0`.
 
 With `--format sarif`, findings show up as code-scanning annotations on the PR
 (and the grade rides along in the run's `properties`). Run it from the repo root:
@@ -278,7 +286,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with: { components: clippy }
-      - run: cargo install --locked rustgrade
+      - run: curl -sSfL https://github.com/angeldevmobile/rustgrade/releases/latest/download/rustgrade-x86_64-unknown-linux-musl.tar.gz | tar -xz -C ~/.cargo/bin rustgrade
       - run: rustgrade audit --format sarif --fail-on D > rustgrade.sarif
       - uses: github/codeql-action/upload-sarif@v3
         if: always()   # upload even when --fail-on fails the step

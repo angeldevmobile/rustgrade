@@ -1,0 +1,131 @@
+name: release
+
+# Builds rustgrade for each platform and attaches the archives to the GitHub
+# release of a `v*` tag. Publishing to crates.io stays manual (see CHANGELOG).
+#
+# Asset names carry no version (`rustgrade-<target>.tar.gz`, `.zip` on
+# Windows), so `releases/latest/download/<name>` always works, and they match
+# `[package.metadata.binstall]` for `cargo binstall rustgrade`.
+
+on:
+  push:
+    tags: ["v*"]
+  # Re-run for an existing tag, e.g. to add binaries to an older release.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build (e.g. v0.3.0)
+        required: true
+
+permissions:
+  contents: write # create the release and upload assets
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+          - { target: x86_64-apple-darwin, os: macos-latest, cross: true }
+          - { target: aarch64-apple-darwin, os: macos-latest }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Tag matches the crate version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::tag $TAG does not match Cargo.toml version $version"
+            exit 1
+          fi
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install musl tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build
+        run: |
+          # Tags before the `dist` profile existed (v0.3.0) build with `release`.
+          profile=release
+          grep -q '^\[profile.dist\]' Cargo.toml && profile=dist
+          cargo build --locked --profile "$profile" -p rustgrade --target ${{ matrix.target }}
+          echo "BIN=target/${{ matrix.target }}/$profile/rustgrade" >> "$GITHUB_ENV"
+      - name: Smoke test
+        if: ${{ !matrix.cross }}
+        run: $BIN --version
+      - name: Package
+        run: |
+          name=rustgrade-${{ matrix.target }}
+          bin=$BIN
+          mkdir dist
+          if [ "${{ runner.os }}" = Windows ]; then
+            cp "$bin.exe" README.md LICENSE dist/
+            (cd dist && 7z a -bd "../$name.zip" rustgrade.exe README.md LICENSE >/dev/null)
+            archive=$name.zip
+          else
+            cp "$bin" README.md LICENSE dist/
+            tar -czf "$name.tar.gz" -C dist rustgrade README.md LICENSE
+            archive=$name.tar.gz
+          fi
+          if command -v sha256sum >/dev/null; then
+            sha256sum "$archive" > "$archive.sha256"
+          else
+            shasum -a 256 "$archive" > "$archive.sha256"
+          fi
+          echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            ${{ env.ARCHIVE }}
+            ${{ env.ARCHIVE }}.sha256
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Release notes from CHANGELOG.md
+        run: |
+          version=${TAG#v}
+          awk -v head="## [$version]" '
+            /^## \[/ { on = (index($0, head) == 1); next }
+            on
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::no '## [$version]' section in CHANGELOG.md"
+            exit 1
+          fi
+          {
+            echo
+            echo "Install: \`cargo binstall rustgrade\` (prebuilt) or \`cargo install --locked rustgrade\`."
+          } >> notes.md
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" assets/* --clobber
+          else
+            gh release create "$TAG" assets/* --title "$TAG" --notes-file notes.md
+          fi
