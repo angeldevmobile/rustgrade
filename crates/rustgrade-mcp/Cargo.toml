@@ -5,6 +5,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+# A stub until v0.6; the CLI gets its `mcp` feature back when this ships.
+publish = false
 
 [dependencies]
 rustgrade-core.workspace = true

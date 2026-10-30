@@ -1,0 +1,35 @@
+name: rustgrade
+
+# rustgrade on its own code, with findings uploaded to GitHub code scanning.
+# Same shape as the README's CI example, but runs the CLI from this checkout.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  security-events: write # upload-sarif
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -q -p rustgrade
+      # Tests already run in ci.yml.
+      - name: Audit (SARIF)
+        run: ./target/debug/rustgrade audit --no-tests --format sarif --fail-on C > rustgrade.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always() # upload even when --fail-on fails the step
+        with:
+          sarif_file: rustgrade.sarif
+          category: rustgrade

@@ -7,10 +7,13 @@ version = "0.2.0-dev"
 edition = "2024"
 license = "MIT"
 rust-version = "1.88"  # let-chains
+repository = "https://github.com/angeldevmobile/rustgrade"
+keywords = ["rust", "lint", "code-review", "static-analysis", "ai"]
 
 [workspace.dependencies]
-rustgrade-core = { path = "crates/rustgrade-core" }
-rustgrade-mcp = { path = "crates/rustgrade-mcp" }
+# crates.io needs a version next to `path`; keep it equal to `version` above.
+rustgrade-core = { path = "crates/rustgrade-core", version = "0.2.0-dev" }
+rustgrade-mcp = { path = "crates/rustgrade-mcp", version = "0.2.0-dev" }
 syn = { version = "2", features = ["full", "visit", "extra-traits"] }
 proc-macro2 = { version = "1", features = ["span-locations"] }
 serde = { version = "1", features = ["derive"] }

@@ -76,9 +76,6 @@ enum Command {
     },
     /// Write a `rustgrade.toml` with defaults.
     Init,
-    /// Start the MCP server on stdio (requires `--features mcp`).
-    #[cfg(feature = "mcp")]
-    Mcp,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -202,8 +199,6 @@ fn main() -> ExitCode {
         Command::Uninstall { target, force } => cmd::install::uninstall(&target.options(force)),
         Command::Doctor => cmd::doctor::run(),
         Command::Init => cmd::not_yet("init"),
-        #[cfg(feature = "mcp")]
-        Command::Mcp => rustgrade_mcp::serve_stdio().map(|()| EXIT_OK),
     };
 
     match result {

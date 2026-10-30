@@ -6,17 +6,17 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+keywords.workspace = true
+readme = "../../README.md"
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "rustgrade"
 path = "src/main.rs"
 
-[features]
-mcp = ["dep:rustgrade-mcp"]
-
 [dependencies]
 rustgrade-core.workspace = true
-rustgrade-mcp = { workspace = true, optional = true }
 anyhow.workspace = true
 clap.workspace = true
 ignore = "0.4"

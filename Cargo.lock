@@ -278,7 +278,6 @@ dependencies = [
  "clap",
  "ignore",
  "rustgrade-core",
- "rustgrade-mcp",
  "serde",
  "serde_json",
  "toml",

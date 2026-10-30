@@ -71,6 +71,17 @@ installed plugin when that version changes.
   URIs include the scan path, so they resolve from the repo root; `audit` puts
   the grade, score and cap in the run's `properties`.
 
+- `.github/workflows/rustgrade.yml`: rustgrade audits itself on every push and
+  PR and uploads the SARIF to code scanning.
+
+### Changed
+
+- Ready for crates.io: the skill, commands and `targets.toml` that `install`
+  embeds are mirrored in `crates/rustgrade-cli/assets/` (a test keeps the copy
+  in sync; `UPDATE_ASSETS=1` regenerates it), plus crate metadata.
+- The `mcp` feature is gone until the adapter exists (v0.6);
+  `rustgrade-mcp` is not published.
+
 ### Fixed
 
 - Scanning a single file printed an empty path (`:6:43:`); it now prints the
