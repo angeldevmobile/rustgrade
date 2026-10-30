@@ -47,8 +47,9 @@ one crate is deleted and nothing else changes. A new protocol is one new adapter
 **Available now (v0.2):**
 
 ```bash
-# CLI (not on crates.io yet; --locked uses the dependency versions CI tested)
-cargo install --locked --git https://github.com/angeldevmobile/rustgrade rustgrade
+# CLI (--locked uses the dependency versions CI tested)
+cargo install --locked rustgrade
+# or the latest main: cargo install --locked --git https://github.com/angeldevmobile/rustgrade rustgrade
 
 rustgrade scan                     # deterministic scan of the current crate
 rustgrade scan --format json       # what agents read
@@ -78,8 +79,6 @@ rustgrade install --agent claude --scope user   # or for all your projects
 rustgrade doctor                       # toolchain, agents, install status
 rustgrade uninstall --agent all        # remove exactly what install wrote
 ```
-
-**Planned:** `cargo install rustgrade` from crates.io.
 
 ---
 
@@ -250,7 +249,7 @@ Gate on the grade (fails on C or worse):
 # .github/workflows/rustgrade.yml
 - uses: dtolnay/rust-toolchain@stable
   with: { components: clippy }
-- run: cargo install --locked --git https://github.com/angeldevmobile/rustgrade rustgrade
+- run: cargo install --locked rustgrade
 - run: rustgrade audit --fail-on C
 ```
 
@@ -276,7 +275,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with: { components: clippy }
-      - run: cargo install --locked --git https://github.com/angeldevmobile/rustgrade rustgrade
+      - run: cargo install --locked rustgrade
       - run: rustgrade audit --format sarif --fail-on D > rustgrade.sarif
       - uses: github/codeql-action/upload-sarif@v3
         if: always()   # upload even when --fail-on fails the step

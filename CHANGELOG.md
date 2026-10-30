@@ -9,7 +9,11 @@ The Claude Code plugin's version (`.claude-plugin/plugin.json`) is bumped on
 every change to `skills/` or `commands/`: Claude Code only updates an
 installed plugin when that version changes.
 
-## [Unreleased] - 0.2.0
+## [Unreleased]
+
+## [0.2.0] - 2026-10-29
+
+First release on crates.io (`rustgrade`, `rustgrade-core`).
 
 ### Added
 
