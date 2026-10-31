@@ -72,7 +72,7 @@ pub fn run() -> anyhow::Result<u8> {
 fn write_status(out: &mut impl Write, agent: &Agent, inst: &Install) -> io::Result<()> {
     let (mut missing, mut edited) = (0, 0);
     for f in &inst.files {
-        match agents::current_hash(&f.path, f.section) {
+        match agents::current_hash(&f.path, f.part()) {
             Ok(Some(hash)) if hash == f.hash => {}
             Ok(Some(_)) => edited += 1,
             Ok(None) | Err(_) => missing += 1,
@@ -94,6 +94,12 @@ fn write_status(out: &mut impl Write, agent: &Agent, inst: &Install) -> io::Resu
         .files
         .iter()
         .filter(|f| f.section && f.hash != section)
+        .count();
+    let hook = content_hash(agents::settings::entry().as_bytes());
+    outdated += inst
+        .files
+        .iter()
+        .filter(|f| f.hook && f.hash != hook)
         .count();
 
     if missing + edited + blocked + outdated == 0 {

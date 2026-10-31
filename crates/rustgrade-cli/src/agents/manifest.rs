@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
-use super::Scope;
+use super::{Part, Scope};
 
 const VERSION: u32 = 1;
 
@@ -31,11 +31,24 @@ pub struct Install {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileRecord {
     pub path: PathBuf,
-    /// Hash of the whole file, or of the section for `section` records.
+    /// Hash of the whole file, or of the part rustgrade owns (see `part`).
     pub hash: String,
     /// rustgrade owns only its marked section of this file (`CLAUDE.md`, ...).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub section: bool,
+    /// rustgrade owns only its hook entry of this file (`settings.json`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hook: bool,
+}
+
+impl FileRecord {
+    pub fn part(&self) -> Part {
+        match (self.section, self.hook) {
+            (true, _) => Part::Section,
+            (_, true) => Part::Hook,
+            _ => Part::Whole,
+        }
+    }
 }
 
 impl Manifest {

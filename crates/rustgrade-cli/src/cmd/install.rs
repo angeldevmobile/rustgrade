@@ -1,6 +1,7 @@
 //! `rustgrade install` / `uninstall`: copy the skill and commands into agent
-//! directories and add the rustgrade section to each agent's instructions
-//! file, tracked in the manifest so every change is reversible.
+//! directories, add the rustgrade section to each agent's instructions file and
+//! the edit hook to its settings, tracked in the manifest so every change is
+//! reversible.
 
 use std::fs;
 use std::io::{self, Write};
@@ -9,7 +10,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 
 use crate::agents::manifest::{FileRecord, Install, Manifest};
-use crate::agents::{self, Agent, Scope, content_hash, section};
+use crate::agents::{self, Agent, Part, Scope, content_hash, section, settings};
 use crate::{EXIT_FINDINGS, EXIT_OK};
 
 pub struct Options<'a> {
@@ -20,8 +21,15 @@ pub struct Options<'a> {
     pub dir: Option<&'a Path>,
     pub force: bool,
     pub dry_run: bool,
-    /// Add the rustgrade section to the agent's instructions file.
+    pub wiring: Wiring,
+}
+
+/// What `install` adds beyond the skill and commands.
+pub struct Wiring {
+    /// The rustgrade section in the agent's instructions file.
     pub instructions: bool,
+    /// The edit hook in the agent's settings, where it has them.
+    pub hook: bool,
 }
 
 /// What happens to one file.
@@ -94,7 +102,7 @@ fn install_agent(
     let mut decided = Vec::with_capacity(planned.len());
     for (path, contents) in &planned {
         let hash = content_hash(contents.as_bytes());
-        let action = decide(path, &hash, manifest, opts.force, false)?;
+        let action = decide(path, &hash, manifest, opts.force, Part::Whole)?;
         if matches!(action, Action::Create | Action::Update) && !opts.dry_run {
             if let Some(dir) = path.parent() {
                 fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
@@ -128,6 +136,7 @@ fn install_agent(
                 path: path.clone(),
                 hash,
                 section: false,
+                hook: false,
             });
             continue;
         }
@@ -150,13 +159,14 @@ fn install_agent(
                 path: path.clone(),
                 hash,
                 section: false,
+                hook: false,
             });
         }
     }
 
     let section_path = agent
         .instructions_path(root, opts.scope)
-        .filter(|_| opts.instructions);
+        .filter(|_| opts.wiring.instructions);
     if let Some(path) = &section_path {
         match install_section(out, path, root, manifest, opts)? {
             Some(record) => records.push(record),
@@ -164,8 +174,17 @@ fn install_agent(
         }
     }
 
+    let hook_path = agent.hooks_path(root).filter(|_| opts.wiring.hook);
+    if let Some(path) = &hook_path {
+        match install_hook(out, path, root, manifest, opts)? {
+            Some(record) => records.push(record),
+            None => *conflicts += 1,
+        }
+    }
+
     let mut shipped: Vec<&Path> = planned.iter().map(|(p, _)| p.as_path()).collect();
     shipped.extend(section_path.as_deref());
+    shipped.extend(hook_path.as_deref());
     remove_stale(out, manifest, agent, root, &shipped, opts)?;
     Ok(Install {
         agent: agent.id.clone(),
@@ -239,7 +258,7 @@ pub fn uninstall(opts: &Options<'_>) -> anyhow::Result<u8> {
                 writeln!(out, "  (also installed for another agent)")?;
                 continue;
             }
-            let current = agents::current_hash(&f.path, f.section)
+            let current = agents::current_hash(&f.path, f.part())
                 .with_context(|| format!("reading {}", f.path.display()))?;
             let verb = match current {
                 None => "gone",
@@ -255,7 +274,7 @@ pub fn uninstall(opts: &Options<'_>) -> anyhow::Result<u8> {
                 }
             };
             write_entry(&mut out, verb, &f.path, &root)?;
-            let what = if f.section { " section" } else { "" };
+            let what = part_label(f);
             if verb == "kept" {
                 writeln!(out, "{what}  (edited since install; --force to remove)")?;
             } else {
@@ -317,10 +336,10 @@ fn decide(
     hash: &str,
     manifest: &Manifest,
     force: bool,
-    section: bool,
+    part: Part,
 ) -> anyhow::Result<Action> {
-    let Some(existing) = agents::current_hash(path, section)
-        .with_context(|| format!("reading {}", path.display()))?
+    let Some(existing) =
+        agents::current_hash(path, part).with_context(|| format!("reading {}", path.display()))?
     else {
         return Ok(Action::Create);
     };
@@ -345,7 +364,7 @@ fn install_section(
 ) -> anyhow::Result<Option<FileRecord>> {
     let block = agents::instructions_block();
     let hash = content_hash(block.as_bytes());
-    let action = decide(path, &hash, manifest, opts.force, true)?;
+    let action = decide(path, &hash, manifest, opts.force, Part::Section)?;
     if matches!(action, Action::Create | Action::Update) && !opts.dry_run {
         write_section(path, &block)?;
     }
@@ -365,7 +384,67 @@ fn install_section(
         path: path.to_path_buf(),
         hash,
         section: true,
+        hook: false,
     }))
+}
+
+/// Adds or updates the hook entry in the settings file at `path`. Returns its
+/// manifest record, or `None` if the file was left alone.
+fn install_hook(
+    out: &mut impl Write,
+    path: &Path,
+    root: &Path,
+    manifest: &Manifest,
+    opts: &Options<'_>,
+) -> anyhow::Result<Option<FileRecord>> {
+    let existing = match fs::read_to_string(path) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
+    };
+    let updated = match settings::upsert(existing.as_deref()) {
+        Ok(text) => text,
+        Err(e) => {
+            write_entry(out, "kept", path, root)?;
+            writeln!(out, "  (no hook added: {e})")?;
+            return Ok(None);
+        }
+    };
+    let hash = content_hash(settings::entry().as_bytes());
+    let action = decide(path, &hash, manifest, opts.force, Part::Hook)?;
+    if matches!(action, Action::Create | Action::Update) && !opts.dry_run {
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+        }
+        fs::write(path, updated).with_context(|| format!("writing {}", path.display()))?;
+    }
+    let verb = match action {
+        Action::Create => "added",
+        Action::Update => "updated",
+        Action::Unchanged => "unchanged",
+        Action::Conflict => "kept",
+    };
+    write_entry(out, verb, path, root)?;
+    if action == Action::Conflict {
+        writeln!(out, " hook  (edited by you; --force to replace)")?;
+        return Ok(None);
+    }
+    writeln!(out, " hook")?;
+    Ok(Some(FileRecord {
+        path: path.to_path_buf(),
+        hash,
+        section: false,
+        hook: true,
+    }))
+}
+
+/// How output names a record: only part of a file, or all of it.
+fn part_label(f: &FileRecord) -> &'static str {
+    match f.part() {
+        Part::Whole => "",
+        Part::Section => " section",
+        Part::Hook => " hook",
+    }
 }
 
 /// Adds or replaces the rustgrade section in `path`, creating the file if needed.
@@ -382,13 +461,18 @@ fn write_section(path: &Path, block: &str) -> anyhow::Result<()> {
         .with_context(|| format!("writing {}", path.display()))
 }
 
-/// Removes what rustgrade owns at `f`: the whole file, or only its section
-/// (and the file too if nothing else is left in it).
+/// Removes what rustgrade owns at `f`: the whole file, or only its section or
+/// hook (and the file too if nothing else is left in it).
 fn remove_owned(f: &FileRecord, root: &Path) -> anyhow::Result<()> {
-    if f.section {
+    if f.part() != Part::Whole {
         let text =
             fs::read_to_string(&f.path).with_context(|| format!("reading {}", f.path.display()))?;
-        let rest = section::remove(&text);
+        let rest = match f.part() {
+            Part::Hook => {
+                settings::remove(&text).with_context(|| format!("updating {}", f.path.display()))?
+            }
+            _ => section::remove(&text),
+        };
         if !rest.trim().is_empty() {
             return fs::write(&f.path, rest)
                 .with_context(|| format!("writing {}", f.path.display()));
@@ -400,7 +484,8 @@ fn remove_owned(f: &FileRecord, root: &Path) -> anyhow::Result<()> {
 }
 
 /// Removes what a previous install of this agent wrote that the current one
-/// no longer ships (files, or a section after `--no-instructions`), if
+/// no longer ships (files, or a section or hook after `--no-instructions` or
+/// `--no-hook`), if
 /// unedited and not owned by another agent.
 fn remove_stale(
     out: &mut impl Write,
@@ -418,14 +503,14 @@ fn remove_stale(
         if still_shipped || manifest.shared_with_others(&f.path, &agent.id, root) {
             continue;
         }
-        let unedited = agents::current_hash(&f.path, f.section)
+        let unedited = agents::current_hash(&f.path, f.part())
             .is_ok_and(|h| h.as_deref() == Some(f.hash.as_str()));
         if unedited {
             if !opts.dry_run {
                 remove_owned(f, root)?;
             }
             write_entry(out, "removed", &f.path, root)?;
-            writeln!(out, "{}", if f.section { " section" } else { "" })?;
+            writeln!(out, "{}", part_label(f))?;
         }
     }
     Ok(())

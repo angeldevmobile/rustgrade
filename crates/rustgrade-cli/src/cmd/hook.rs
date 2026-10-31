@@ -7,7 +7,7 @@ use std::io::Read;
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
 
-use rustgrade_core::Severity;
+use rustgrade_core::{Category, Severity};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -59,9 +59,13 @@ fn respond(stdin: &str) -> anyhow::Result<Option<String>> {
     if !Path::new(&file).is_file() {
         return Ok(None);
     }
-    let Some(mut report) = scan::report_for_file(&file, FLOOR)? else {
+    let Some(mut report) = scan::report_for_file(&file, Severity::Low)? else {
         return Ok(None);
     };
+    // A suppression that misses is low, but left unsaid the agent believes it worked.
+    report
+        .findings
+        .retain(|f| f.severity >= FLOOR || f.category == Category::Meta);
     if let Some(new_string) = &input.tool_input.new_string {
         // Old problems elsewhere in the file are not this edit's business: without
         // this, every edit of a legacy file would repeat them. If the text is not
@@ -89,7 +93,8 @@ fn respond(stdin: &str) -> anyhow::Result<Option<String>> {
     let reason = format!(
         "rustgrade found {total} issue(s) in the code you just wrote:\n{}{more}\
          Fix them before finishing. Only if the code is right and the scanner cannot \
-         see why, add `// rustgrade: allow(rule-id) reason`.",
+         see why, add `// rustgrade: allow(rule-id) reason` on the line above the \
+         statement or at the end of the flagged line.",
         String::from_utf8_lossy(&shown),
     );
     Ok(Some(

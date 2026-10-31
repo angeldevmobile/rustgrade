@@ -15,6 +15,8 @@
 #   instructions_file       file read on every request (CLAUDE.md, AGENTS.md...)
 #                           that gets the rustgrade section, --scope project
 #   user_instructions_file  the same for --scope user (absent: none)
+#   hooks_file              settings file that gets the edit hook, for both scopes
+#                           (absent: the agent has no hook support here)
 # An agent counts as installed (for `--agent all` and `doctor`) if any `detect`
 # path exists under the home directory, or any `detect_commands` executable is
 # on PATH. Use commands where a folder is ambiguous: ~/.gemini is also created
@@ -43,6 +45,7 @@ user_commands_dir = ".claude/commands"
 commands_format = "claude"
 instructions_file = "CLAUDE.md"
 user_instructions_file = ".claude/CLAUDE.md"
+hooks_file = ".claude/settings.json"
 
 [[agent]]
 id = "codex"

@@ -133,8 +133,9 @@ let (stop_tx, stop_rx) = std::sync::mpsc::channel::<()>();
 let id = ids.next().expect("non-empty"); // rustgrade: allow(unwrap-outside-tests) checked by caller
 ```
 
-- The comment goes at the end of the finding's line, or on the line above
-  (other comments and attributes in between are fine; a blank line breaks it).
+- The comment goes at the end of the finding's line, or on the line above the
+  statement, which it covers to its `;` or the `{` of its block (other comments
+  and attributes in between are fine; a blank line breaks it).
 - The **reason is mandatory**. Suppress only when the code is right and the
   scanner cannot see why. Never suppress to make CI pass.
 - `invalid-suppression` / `unused-suppression` findings mean malformed or stale

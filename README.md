@@ -79,8 +79,9 @@ rustgrade install --agent claude --scope user # or one agent, for all your proje
 rustgrade doctor                              # check toolchain, agents and install
 ```
 
-`install` copies the skill and commands, and adds a short marked section to the agent's
-instructions file (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md` or
+`install` copies the skill and commands, adds a hook in Claude Code that scans each Rust
+file as the agent edits it (`--no-hook` skips it), and adds a short marked section to the
+agent's instructions file (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md` or
 `.github/copilot-instructions.md`). That section matters: agents read that file on every
 request but load a skill only when they decide to. In
 [our evals](evals/agents/RESULTS.md) the skill was used in 0 of 6 coding runs without
@@ -97,9 +98,9 @@ Inside a Claude Code session:
 ```
 
 Plugin commands are namespaced: `/rustgrade:audit`, `/rustgrade:hot-path`. The plugin
-does not edit `CLAUDE.md`, so add the lines in
-[`targets/instructions.md`](targets/instructions.md) yourself. It still needs the CLI
-for deterministic results.
+brings the edit hook, which needs the CLI and stays silent without it. It does not edit
+`CLAUDE.md`; to add the section too, copy the lines in
+[`targets/instructions.md`](targets/instructions.md).
 
 </details>
 
@@ -109,7 +110,8 @@ for deterministic results.
 Every file is recorded with its hash in `~/.rustgrade/manifest.json`. `install` never
 overwrites a file it didn't write or that you edited, and `uninstall` removes only its
 own unedited files (both take `--force`). In instructions files rustgrade owns only the
-block between `<!-- rustgrade:begin -->` and `<!-- rustgrade:end -->`.
+block between `<!-- rustgrade:begin -->` and `<!-- rustgrade:end -->`, and in
+`.claude/settings.json` only its hook entry.
 
 ```bash
 rustgrade install --agent all --dry-run    # show what would change

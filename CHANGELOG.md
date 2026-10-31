@@ -13,6 +13,13 @@ installed plugin when that version changes.
 
 ### Added
 
+- `install` adds the edit hook to Claude Code's `.claude/settings.json`, keeping
+  your other settings; `uninstall` puts them back and `--no-hook` skips it. The
+  plugin brings the same hook in `hooks/hooks.json`. Both stay silent where the CLI
+  is missing or older. In `evals/agents` (three tasks, 9 runs per condition,
+  Sonnet) medium-or-worse findings went from 6 with no help to 1 with the hook and
+  2 with the instructions section; clippy's `unwrap` / `expect` count went from 5
+  to 0 with either. Hidden tests passed in every run, with or without them.
 - `rustgrade hook`: a Claude Code `PostToolUse` hook. It reads the hook's JSON on
   stdin, scans the Rust file just edited with its project's `rustgrade.toml` and
   returns medium-or-worse findings to the agent (at most 10 listed). After an
@@ -22,6 +29,15 @@ installed plugin when that version changes.
   `install` do not set it up yet.
 - `evals/agents/`: harder tasks (`chunked`, `pool`, `flight`) and condition H
   (skill + CLI + edit hook).
+
+### Fixed
+
+- A suppression on its own line now covers the whole next statement, up to its
+  `;` or the `{` of its block. It used to cover one line, so it missed findings
+  further down a multi-line statement and was reported as unused.
+- `rustgrade hook` reports `invalid-suppression` and `unused-suppression`, which
+  are low: without them an agent whose suppression missed believed it had worked.
+- The hook says where a suppression goes.
 
 ## [0.4.0] - 2026-10-31
 

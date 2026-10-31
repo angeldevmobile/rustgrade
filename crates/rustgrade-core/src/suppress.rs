@@ -1,9 +1,13 @@
 //! Inline suppressions: `// rustgrade: allow(rule-id, ...) reason`.
 //!
 //! A trailing comment covers its own line. A comment on its own line covers the
-//! next code line, skipping other comments and attributes; a blank line breaks it.
-//! The reason is mandatory, so every silenced finding says why.
+//! next statement, skipping other comments and attributes; a blank line breaks
+//! it. A block's body is not part of its statement: an allow above a `for` covers
+//! the header only. The reason is mandatory, so every silenced finding says why.
 
+use std::ops::RangeInclusive;
+
+use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use serde::Serialize;
 
 use crate::finding::{Category, Finding, Severity, Span};
@@ -21,7 +25,7 @@ pub struct Suppressed {
 
 struct Allow<'s> {
     span: Span,
-    target_line: Option<usize>,
+    target: Option<RangeInclusive<usize>>,
     rules: Vec<&'s str>,
     reason: &'s str,
     used: bool,
@@ -41,7 +45,8 @@ pub(crate) fn apply(
         return (findings, Vec::new());
     }
     let lines: Vec<&str> = source.lines().collect();
-    let literals = literal_ranges(source);
+    let tokens = source.parse::<TokenStream>().ok();
+    let literals = literal_ranges(tokens.clone());
     let mut kept = Vec::new();
     let mut allows = Vec::new();
 
@@ -74,14 +79,21 @@ pub(crate) fn apply(
             }
             Ok((rules, reason)) => {
                 let own_line = line[..col].trim().is_empty();
-                let target_line = if own_line {
-                    next_code_line(&lines, idx + 1)
+                let target = if own_line {
+                    next_code_line(&lines, idx + 1).map(|start| {
+                        // rustgrade: allow(clone-in-loop) a refcount bump, once per suppression comment
+                        let end = tokens
+                            .clone()
+                            .and_then(|t| statement_end(t, start))
+                            .unwrap_or(start);
+                        start..=end
+                    })
                 } else {
-                    Some(idx + 1)
+                    Some(idx + 1..=idx + 1)
                 };
                 allows.push(Allow {
                     span,
-                    target_line,
+                    target,
                     rules,
                     reason,
                     used: false,
@@ -92,9 +104,10 @@ pub(crate) fn apply(
 
     let mut suppressed = Vec::new();
     for f in findings {
-        let allow = allows
-            .iter_mut()
-            .find(|a| a.target_line == Some(f.span.line) && a.rules.contains(&f.rule));
+        // Latest first: when statements nest, the nearest comment takes the finding.
+        let allow = allows.iter_mut().rev().find(|a| {
+            a.rules.contains(&f.rule) && a.target.as_ref().is_some_and(|t| t.contains(&f.span.line))
+        });
         match allow {
             Some(a) => {
                 a.used = true;
@@ -129,21 +142,21 @@ type Range = ((usize, usize), (usize, usize));
 
 /// Ranges of string/char literals and doc comments, so a marker quoted
 /// inside them is not mistaken for a suppression.
-fn literal_ranges(source: &str) -> Vec<Range> {
-    fn walk(tokens: proc_macro2::TokenStream, out: &mut Vec<Range>) {
+fn literal_ranges(tokens: Option<TokenStream>) -> Vec<Range> {
+    fn walk(tokens: TokenStream, out: &mut Vec<Range>) {
         for tt in tokens {
             match tt {
-                proc_macro2::TokenTree::Literal(l) => {
+                TokenTree::Literal(l) => {
                     let (s, e) = (l.span().start(), l.span().end());
                     out.push(((s.line, s.column), (e.line, e.column)));
                 }
-                proc_macro2::TokenTree::Group(g) => walk(g.stream(), out),
+                TokenTree::Group(g) => walk(g.stream(), out),
                 _ => {}
             }
         }
     }
     let mut out = Vec::new();
-    if let Ok(tokens) = source.parse() {
+    if let Some(tokens) = tokens {
         walk(tokens, &mut out);
     }
     out
@@ -201,6 +214,40 @@ fn next_code_line(lines: &[&str], from: usize) -> Option<usize> {
         }
     }
     None
+}
+
+/// Last line of the statement that starts on `line`: up to its `;` or `,`, or
+/// to the `{` that opens its block. `None` if no token starts on that line.
+fn statement_end(tokens: TokenStream, line: usize) -> Option<usize> {
+    let mut tokens = tokens.into_iter();
+    let first = loop {
+        let tt = tokens.next()?;
+        let (start, end) = (tt.span().start().line, tt.span().end().line);
+        if start == line {
+            break tt;
+        }
+        if start > line {
+            return None;
+        }
+        if let TokenTree::Group(g) = &tt
+            && line <= end
+        {
+            return statement_end(g.stream(), line);
+        }
+    };
+    let mut last = line;
+    for tt in std::iter::once(first).chain(tokens) {
+        match &tt {
+            TokenTree::Punct(p) if matches!(p.as_char(), ';' | ',') => {
+                return Some(tt.span().end().line);
+            }
+            TokenTree::Group(g) if g.delimiter() == Delimiter::Brace => {
+                return Some(g.span_open().start().line);
+            }
+            _ => last = tt.span().end().line,
+        }
+    }
+    Some(last)
 }
 
 fn meta(rule: &'static str, span: Span, message: String) -> Finding {
@@ -269,6 +316,70 @@ mod tests {
         assert_eq!(kept, Vec::<&str>::new());
         assert_eq!(suppressed.len(), 2);
         assert_eq!(suppressed[0].1, "stub until v0.6");
+    }
+
+    #[test]
+    fn own_line_comment_covers_a_statement_split_over_lines() {
+        // What rustfmt does to a builder chain: the finding is not on the next line.
+        let src = "fn f() {
+    // rustgrade: allow(a) one name per worker
+    let spawned = Builder::new()
+        .name(format!(\"w{i}\"))
+        .spawn(g);
+    other();
+}
+";
+        let (kept, suppressed) = run(src, vec![finding("a", 4)]);
+        assert_eq!(kept, Vec::<&str>::new());
+        assert_eq!(suppressed.len(), 1);
+        // Past the `;` it no longer applies.
+        let (kept, _) = run(src, vec![finding("a", 6)]);
+        assert_eq!(kept, ["a", UNUSED]);
+    }
+
+    #[test]
+    fn a_blocks_body_is_not_part_of_its_statement() {
+        let src = "fn f() {
+    // rustgrade: allow(a) reason
+    for x in xs
+        .iter()
+    {
+        y();
+    }
+}
+";
+        assert_eq!(run(src, vec![finding("a", 4)]).0, Vec::<&str>::new());
+        assert_eq!(run(src, vec![finding("a", 6)]).0, ["a", UNUSED]);
+    }
+
+    #[test]
+    fn a_struct_field_ends_at_its_comma() {
+        let src = "fn f() {
+    let s = S {
+        // rustgrade: allow(a) reason
+        x: g()
+            .h(),
+        y: i(),
+    };
+}
+";
+        assert_eq!(run(src, vec![finding("a", 5)]).0, Vec::<&str>::new());
+        assert_eq!(run(src, vec![finding("a", 6)]).0, ["a", UNUSED]);
+    }
+
+    #[test]
+    fn the_nearest_comment_takes_a_nested_finding() {
+        let src = "fn f() {
+    // rustgrade: allow(a) outer
+    g(
+        // rustgrade: allow(a) inner
+        h(),
+    );
+}
+";
+        let (kept, suppressed) = run(src, vec![finding("a", 5)]);
+        assert_eq!(suppressed, [("a", "inner".to_owned())]);
+        assert_eq!(kept, [UNUSED]);
     }
 
     #[test]

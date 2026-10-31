@@ -212,6 +212,40 @@ fn text_rewritten_by_a_formatter_falls_back_to_the_whole_file() {
     );
 }
 
+/// From a real eval run: an agent silenced a finding in a multi-line statement.
+const BUILDER: &str = "pub fn f(i: u8) {
+    for _ in 0..2 {
+        // rustgrade: allow(alloc-in-loop) one name per worker
+        let b = thread::Builder::new()
+            .name(format!(\"w{i}\"))
+            .stack_size(1);
+    }
+}
+";
+
+#[test]
+fn a_suppression_above_a_multi_line_statement_works() {
+    let p = Project::new("multi-line");
+    p.write("src/lib.rs", BUILDER);
+    assert_eq!(p.edited("src/lib.rs"), "");
+    let comment = "        // rustgrade: allow(alloc-in-loop) one name per worker\n";
+    assert_eq!(p.edited_with("src/lib.rs", comment), "");
+}
+
+#[test]
+fn a_suppression_that_misses_is_reported_even_though_it_is_low() {
+    let p = Project::new("missed");
+    let line = "    // rustgrade: allow(alloc-in-loop) no allocation here\n";
+    p.write(
+        "src/lib.rs",
+        &format!("pub fn f() {{\n{line}    g();\n}}\n"),
+    );
+    let response: Value = serde_json::from_str(&p.edited_with("src/lib.rs", line)).expect("JSON");
+    let reason = response["reason"].as_str().expect("reason");
+    assert!(reason.contains("unused-suppression"), "{reason}");
+    assert!(reason.contains("line above the statement"), "{reason}");
+}
+
 #[test]
 fn never_fails_on_bad_input() {
     let p = Project::new("bad");

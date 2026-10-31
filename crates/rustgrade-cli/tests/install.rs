@@ -50,6 +50,126 @@ fn exists(p: &Path) -> bool {
     p.exists()
 }
 
+const HOOK: &str = "rustgrade hook 2>/dev/null || true";
+
+#[test]
+fn the_plugin_and_install_use_the_same_hook() {
+    let hooks = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../hooks/hooks.json");
+    let hooks = fs::read_to_string(hooks).expect("read hooks/hooks.json");
+    assert!(hooks.contains(HOOK), "{hooks}");
+    assert!(hooks.contains("\"Edit|Write\""), "{hooks}");
+}
+
+#[test]
+fn the_hook_is_added_next_to_user_settings_and_removed_cleanly() {
+    let sb = Sandbox::new("hook", &[".claude"]);
+    let settings = sb.proj(".claude/settings.json");
+    let original = "{\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(ls)\"\n    ]\n  }\n}\n";
+    fs::create_dir_all(settings.parent().expect("parent")).expect("create dir");
+    fs::write(&settings, original).expect("write settings");
+
+    let (code, out) = sb.run(&["install", "--agent", "claude"]);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(
+        out.contains("added     .claude/settings.json hook"),
+        "{out}"
+    );
+    let text = fs::read_to_string(&settings).expect("read settings");
+    assert!(text.contains(HOOK) && text.contains("Bash(ls)"), "{text}");
+
+    let (code, out) = sb.run(&["install", "--agent", "claude"]);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(
+        out.contains("unchanged .claude/settings.json hook"),
+        "{out}"
+    );
+
+    let (code, out) = sb.run(&["doctor"]);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(out.contains("up to date"), "{out}");
+
+    let (code, out) = sb.run(&["uninstall", "--agent", "claude"]);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(
+        out.contains("removed   .claude/settings.json hook"),
+        "{out}"
+    );
+    assert_eq!(
+        fs::read_to_string(&settings).expect("still there"),
+        original
+    );
+}
+
+#[test]
+fn a_settings_file_with_only_the_hook_is_removed_with_it() {
+    let sb = Sandbox::new("hook-only", &[".claude"]);
+    sb.run(&["install", "--agent", "claude"]);
+    assert!(exists(&sb.proj(".claude/settings.json")));
+    sb.run(&["uninstall", "--agent", "claude"]);
+    assert!(!exists(&sb.proj(".claude/settings.json")));
+}
+
+#[test]
+fn no_hook_skips_it_and_removes_an_earlier_one() {
+    let sb = Sandbox::new("no-hook", &[".claude"]);
+    let (code, out) = sb.run(&["install", "--agent", "claude", "--no-hook"]);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(!exists(&sb.proj(".claude/settings.json")));
+
+    sb.run(&["install", "--agent", "claude"]);
+    assert!(exists(&sb.proj(".claude/settings.json")));
+    let (_, out) = sb.run(&["install", "--agent", "claude", "--no-hook"]);
+    assert!(
+        out.contains("removed   .claude/settings.json hook"),
+        "{out}"
+    );
+    assert!(!exists(&sb.proj(".claude/settings.json")));
+}
+
+#[test]
+fn settings_it_cannot_parse_are_left_alone() {
+    let sb = Sandbox::new("hook-bad", &[".claude"]);
+    let settings = sb.proj(".claude/settings.json");
+    fs::create_dir_all(settings.parent().expect("parent")).expect("create dir");
+    fs::write(&settings, "{ // a comment\n}\n").expect("write settings");
+
+    let (code, out) = sb.run(&["install", "--agent", "claude"]);
+    assert_eq!(code, Some(1), "{out}");
+    assert!(out.contains("no hook added"), "{out}");
+    assert_eq!(
+        fs::read_to_string(&settings).expect("read settings"),
+        "{ // a comment\n}\n"
+    );
+    assert!(exists(&sb.proj(".claude/skills/rustgrade/SKILL.md")));
+}
+
+#[test]
+fn an_edited_hook_is_kept_unless_forced() {
+    let sb = Sandbox::new("hook-edited", &[".claude"]);
+    sb.run(&["install", "--agent", "claude"]);
+    let settings = sb.proj(".claude/settings.json");
+    let text = fs::read_to_string(&settings).expect("read settings");
+    let edited = text.replace("Edit|Write", "Edit");
+    fs::write(&settings, &edited).expect("edit settings");
+
+    let (code, out) = sb.run(&["install", "--agent", "claude"]);
+    assert_eq!(code, Some(1), "{out}");
+    assert!(out.contains("edited by you"), "{out}");
+    assert_eq!(fs::read_to_string(&settings).expect("read"), edited);
+
+    let (code, _) = sb.run(&["install", "--agent", "claude", "--force"]);
+    assert_eq!(code, Some(0));
+    assert_eq!(fs::read_to_string(&settings).expect("read"), text);
+}
+
+#[test]
+fn agents_without_hooks_get_no_settings() {
+    let sb = Sandbox::new("plain-cursor", &[".cursor"]);
+    let (code, out) = sb.run(&["install", "--agent", "cursor"]);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(!out.contains("hook"), "{out}");
+}
+
 #[test]
 fn installs_skill_and_commands_for_claude_and_is_idempotent() {
     let sb = Sandbox::new("claude", &[".claude"]);
@@ -77,7 +197,7 @@ fn installs_skill_and_commands_for_claude_and_is_idempotent() {
     );
 
     let (_, doctor) = sb.run(&["doctor"]);
-    assert!(doctor.contains("up to date (10 files)"), "{doctor}");
+    assert!(doctor.contains("up to date (11 files)"), "{doctor}");
 }
 
 #[test]
@@ -337,7 +457,7 @@ fn no_instructions_skips_the_section_and_a_later_run_drops_it() {
     let (_, out) = sb.run(&["install", "--agent", "claude", "--no-instructions"]);
     assert!(!exists(&sb.proj("CLAUDE.md")), "{out}");
     let (_, doctor) = sb.run(&["doctor"]);
-    assert!(doctor.contains("up to date (9 files)"), "{doctor}");
+    assert!(doctor.contains("up to date (10 files)"), "{doctor}");
 
     sb.run(&["install", "--agent", "claude"]);
     assert!(exists(&sb.proj("CLAUDE.md")));

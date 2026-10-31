@@ -62,6 +62,9 @@ enum Command {
         /// (without it, agents rarely load the skill on their own).
         #[arg(long)]
         no_instructions: bool,
+        /// Skip the hook that scans each Rust file the agent edits (Claude Code).
+        #[arg(long)]
+        no_hook: bool,
     },
     /// Remove what `install` wrote (edited files are kept unless --force).
     Uninstall {
@@ -131,14 +134,14 @@ struct InstallTarget {
 }
 
 impl InstallTarget {
-    fn options(&self, force: bool, instructions: bool) -> cmd::install::Options<'_> {
+    fn options(&self, force: bool, instructions: bool, hook: bool) -> cmd::install::Options<'_> {
         cmd::install::Options {
             agent: &self.agent,
             scope: self.scope,
             dir: self.dir.as_deref(),
             force,
             dry_run: self.dry_run,
-            instructions,
+            wiring: cmd::install::Wiring { instructions, hook },
         }
     }
 }
@@ -206,9 +209,10 @@ fn main() -> ExitCode {
             target,
             force,
             no_instructions,
-        } => cmd::install::install(&target.options(force, !no_instructions)),
+            no_hook,
+        } => cmd::install::install(&target.options(force, !no_instructions, !no_hook)),
         Command::Uninstall { target, force } => {
-            cmd::install::uninstall(&target.options(force, true))
+            cmd::install::uninstall(&target.options(force, true, true))
         }
         Command::Doctor => cmd::doctor::run(),
         Command::Init => cmd::not_yet("init"),

@@ -1,0 +1,16 @@
+{
+  "description": "Scans each Rust file the agent edits and hands findings back. Silent without the rustgrade CLI.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "rustgrade hook 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -5,6 +5,7 @@ mod assets;
 mod convert;
 pub mod manifest;
 pub mod section;
+pub mod settings;
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
@@ -41,6 +42,9 @@ pub struct Agent {
     /// Instructions file for `--scope user`; `None`: none at user scope.
     #[serde(default)]
     pub user_instructions_file: Option<String>,
+    /// Settings file that gets the edit hook, for both scopes.
+    #[serde(default)]
+    pub hooks_file: Option<String>,
 }
 
 impl Agent {
@@ -60,6 +64,21 @@ impl Agent {
         };
         rel.map(|r| join_rel(root, r))
     }
+
+    /// Where the edit hook goes under `root`, if the agent supports it.
+    pub fn hooks_path(&self, root: &Path) -> Option<PathBuf> {
+        self.hooks_file.as_deref().map(|r| join_rel(root, r))
+    }
+}
+
+/// What rustgrade owns of a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Part {
+    Whole,
+    /// Its marked section (`CLAUDE.md`, ...).
+    Section,
+    /// Its hook entry (`settings.json`).
+    Hook,
 }
 
 /// The rustgrade section, markers included.
@@ -67,19 +86,19 @@ pub fn instructions_block() -> String {
     section::block(INSTRUCTIONS)
 }
 
-/// Hash of what rustgrade owns at `path` now: the whole file, or only the
-/// section for `section` records. `None` when the file or section is gone.
-pub fn current_hash(path: &Path, section: bool) -> std::io::Result<Option<String>> {
+/// Hash of what rustgrade owns at `path` now. `None` when it is gone.
+pub fn current_hash(path: &Path, part: Part) -> std::io::Result<Option<String>> {
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e),
     };
-    if !section {
-        return Ok(Some(content_hash(&bytes)));
-    }
     let text = String::from_utf8_lossy(&bytes);
-    Ok(section::extract(&text).map(|b| content_hash(b.as_bytes())))
+    Ok(match part {
+        Part::Whole => Some(content_hash(&bytes)),
+        Part::Section => section::extract(&text).map(|b| content_hash(b.as_bytes())),
+        Part::Hook => settings::extract(&text).map(|e| content_hash(e.as_bytes())),
+    })
 }
 
 #[derive(Deserialize)]
