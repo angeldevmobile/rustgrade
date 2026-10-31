@@ -276,7 +276,7 @@ Or, cheaper, only on scanner findings: `rustgrade scan --fail-on high`.
 Every [release](https://github.com/angeldevmobile/rustgrade/releases) has binaries
 for `x86_64` / `aarch64` Linux (static, musl), `x86_64` / `aarch64` macOS and
 `x86_64` Windows, with SHA-256 checksums. To pin a version, replace
-`latest/download` with `download/v0.3.0`.
+`latest/download` with `download/v0.4.0`.
 
 With `--format sarif`, findings show up as code-scanning annotations on the PR
 (and the grade rides along in the run's `properties`). Run it from the repo root:

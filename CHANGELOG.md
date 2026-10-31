@@ -11,6 +11,8 @@ installed plugin when that version changes.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-31
+
 ### Added
 
 - `install` adds a marked rustgrade section to each agent's instructions file
