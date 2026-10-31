@@ -1,5 +1,6 @@
 pub mod audit;
 pub mod doctor;
+pub mod hook;
 pub mod install;
 pub mod rules;
 pub mod scan;

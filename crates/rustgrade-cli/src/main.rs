@@ -80,6 +80,8 @@ enum Command {
     },
     /// Write a `rustgrade.toml` with defaults.
     Init,
+    /// Claude Code `PostToolUse` hook: scans the edited file (JSON on stdin).
+    Hook,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -210,6 +212,7 @@ fn main() -> ExitCode {
         }
         Command::Doctor => cmd::doctor::run(),
         Command::Init => cmd::not_yet("init"),
+        Command::Hook => Ok(cmd::hook::run()),
     };
 
     match result {

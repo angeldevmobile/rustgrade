@@ -11,6 +11,18 @@ installed plugin when that version changes.
 
 ## [Unreleased]
 
+### Added
+
+- `rustgrade hook`: a Claude Code `PostToolUse` hook. It reads the hook's JSON on
+  stdin, scans the Rust file just edited with its project's `rustgrade.toml` and
+  returns medium-or-worse findings to the agent (at most 10 listed). After an
+  `Edit`, only findings on the lines it wrote count, so old problems elsewhere in
+  the file are not repeated on every edit. Any failure
+  is a warning and exit 0, so it never gets in the way of an edit. The plugin and
+  `install` do not set it up yet.
+- `evals/agents/`: harder tasks (`chunked`, `pool`, `flight`) and condition H
+  (skill + CLI + edit hook).
+
 ## [0.4.0] - 2026-10-31
 
 ### Added

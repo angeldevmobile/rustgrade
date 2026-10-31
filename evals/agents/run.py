@@ -7,6 +7,7 @@ with checks rustgrade does not control: hidden tests and clippy lints.
     B  skill and commands in .claude/, no `rustgrade` on PATH
     C  skill, commands and the CLI (what `rustgrade install` gives a user)
     D  C plus a short rustgrade section in the project's CLAUDE.md
+    H  C plus `rustgrade hook` on every edit (no CLAUDE.md section)
 
 Usage, from the repo root (needs `cargo build --release` and `claude` on PATH):
 
@@ -44,7 +45,12 @@ CONDITIONS = {
     "B": "skill only (no CLI)",
     "C": "skill + CLI",
     "D": "skill + CLI + CLAUDE.md section",
+    "H": "skill + CLI + edit hook",
 }
+HOOK_SETTINGS = {"hooks": {"PostToolUse": [{
+    "matcher": "Edit|Write",
+    "hooks": [{"type": "command", "command": "rustgrade hook"}],
+}]}}
 # What condition D adds to CLAUDE.md: the section `rustgrade install` writes,
 # from the same file. Project instructions are read on every request, while a
 # skill only loads when the model decides its description applies.
@@ -180,6 +186,7 @@ def summarize_transcript(lines):
     """Tool use and the final result line of a stream-json transcript."""
     tools = collections.Counter()
     skill_used = cli_used = False
+    hook_findings = 0
     result = {}
     for line in lines:
         try:
@@ -190,6 +197,8 @@ def summarize_transcript(lines):
             continue
         if msg.get("type") == "result":
             result = msg
+        if msg.get("subtype") == "hook_response" and "rustgrade found" in str(msg.get("stdout")):
+            hook_findings += 1
         message = msg.get("message")
         content = message.get("content") if isinstance(message, dict) else None
         for block in content if isinstance(content, list) else []:
@@ -204,6 +213,7 @@ def summarize_transcript(lines):
         "tools": dict(tools),
         "skill_used": skill_used,
         "cli_used": cli_used,
+        "hook_findings": hook_findings,
         "is_error": result.get("is_error"),
         "duration_s": round((result.get("duration_ms") or 0) / 1000),
         "cost_usd": result.get("total_cost_usd"),
@@ -211,24 +221,26 @@ def summarize_transcript(lines):
     }
 
 
-def run_one(task, cond, rep, model, run_dir, claude):
+def run_one(task, cond, rep, model, run_dir, claude, prompt_file="prompt.md"):
     name = f"{task}-{cond}-{rep}"
     out_dir = run_dir / name
     out_dir.mkdir(parents=True)
     work = Path(tempfile.mkdtemp(prefix=f"rg-eval-{name}-"))
     crate = work / task
     copy_starter(task, crate)
-    if cond in ("B", "C", "D"):
+    if cond in ("B", "C", "D", "H"):
         install_skill(crate)
     if cond == "D":
         (crate / "CLAUDE.md").write_text(PROJECT_INSTRUCTIONS, encoding="utf-8")
-    env = toolchain_env(cond in ("C", "D"), run_dir / "bin")
+    if cond == "H":
+        (crate / ".claude" / "settings.json").write_text(json.dumps(HOOK_SETTINGS), encoding="utf-8")
+    env = toolchain_env(cond in ("C", "D", "H"), run_dir / "bin")
     env["CARGO_TARGET_DIR"] = str(run_dir / f"target-{task}")
 
-    prompt = (TASKS / task / "prompt.md").read_text(encoding="utf-8")
+    prompt = (TASKS / task / prompt_file).read_text(encoding="utf-8")
     cmd = [
         claude, "-p", prompt, "--model", model,
-        "--output-format", "stream-json", "--verbose",
+        "--output-format", "stream-json", "--verbose", "--include-hook-events",
         "--setting-sources", "project", "--strict-mcp-config", "--no-session-persistence",
         "--permission-mode", "dontAsk", "--allowedTools", ",".join(TOOLS),
     ]
@@ -244,7 +256,7 @@ def run_one(task, cond, rep, model, run_dir, claude):
     print(f"[{name}] measuring", file=sys.stderr)
     build_code, build_log = sh(["cargo", "build", "--quiet"], crate, env)
     metrics = {
-        "task": task, "condition": cond, "rep": rep, "model": model,
+        "task": task, "condition": cond, "rep": rep, "model": model, "prompt": prompt_file,
         "agent": agent,
         "builds": build_code == 0,
         "clippy": clippy_counts(crate, env) if build_code == 0 else None,
@@ -296,7 +308,7 @@ def cmd_run(args):
     for rep in range(1, args.reps + 1):
         for task in selected:
             for cond in args.conditions.split(","):
-                run_one(task, cond, rep, args.model, run_dir, claude)
+                run_one(task, cond, rep, args.model, run_dir, claude, args.prompt)
     print(f"done: {run_dir}", file=sys.stderr)
 
 
@@ -335,8 +347,8 @@ def cmd_report(args):
                "sees the tests. Numbers are means over runs.\n")
     out.append("| Task | Cond | Hidden tests | Builds | clippy: unwrap/expect/panic | "
                "indexing | await_holding_lock | undoc. unsafe | rustgrade high+ | "
-               "Skill used | CLI used | Cost $ | Time s |")
-    out.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+               "Skill used | CLI used | Hook reports | Cost $ | Time s |")
+    out.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     for (task, cond), rs in sorted(groups.items()):
         passed, total = map(sum, zip(*(hidden(r) for r in rs)))
         lint = lambda *names: mean([sum((r["clippy"] or {}).get(n, 0) for n in names) for r in rs])
@@ -349,6 +361,7 @@ def cmd_report(args):
             f"| {mean([sev(r) for r in rs]):.1f} "
             f"| {mean([r['agent']['skill_used'] for r in rs]):.0%} "
             f"| {mean([r['agent']['cli_used'] for r in rs]):.0%} "
+            f"| {mean([r['agent'].get('hook_findings') for r in rs]):.1f} "
             f"| {mean([r['agent']['cost_usd'] for r in rs]):.2f} "
             f"| {mean([r['agent']['duration_s'] for r in rs]):.0f} |"
         )
@@ -380,6 +393,8 @@ def main():
     run.add_argument("--conditions", default="A,B,C")
     run.add_argument("--reps", type=int, default=1)
     run.add_argument("--model", default="sonnet")
+    run.add_argument("--prompt", default="prompt.md",
+                     help="prompt-goal.md states the goal without listing the traps")
     run.set_defaults(fn=cmd_run)
     report = sub.add_parser("report", help="Markdown summary of runs")
     report.add_argument("runs", nargs="*", help="run ids (default: the latest)")

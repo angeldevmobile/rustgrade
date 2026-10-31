@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
+use ignore::overrides::{Override, OverrideBuilder};
 use rustgrade_core::{Config, Report, Severity, SourceFile};
 
 use crate::{EXIT_FINDINGS, EXIT_OK, FailOn, Globals, output};
@@ -36,6 +37,33 @@ pub fn build_report(root: &Path, min_severity: Option<Severity>) -> anyhow::Resu
     }
 
     let files = collect_rs_files(root, &config.exclude)?;
+    scan_paths(root, &files, &config)
+}
+
+/// Scans one edited file with the `rustgrade.toml` of its project, reporting
+/// findings at or above `floor`. `None` if the config excludes the file or it
+/// is under `target/`. `file` must be absolute.
+pub fn report_for_file(file: &Path, floor: Severity) -> anyhow::Result<Option<Report>> {
+    let dir = file.parent().unwrap_or(file);
+    let root = dir
+        .ancestors()
+        .find(|d| d.join(CONFIG_FILE).is_file())
+        .or_else(|| dir.ancestors().find(|d| d.join("Cargo.toml").is_file()))
+        .unwrap_or(dir);
+    let mut config = load_config(root)?;
+    config.min_severity = config.min_severity.max(floor);
+
+    let excluded = exclude_overrides(root, &config.exclude)?;
+    let skip = file.ancestors().take_while(|p| *p != root).any(|p| {
+        p.file_name().is_some_and(|n| n == "target") || excluded.matched(p, p != file).is_ignore()
+    });
+    if skip {
+        return Ok(None);
+    }
+    scan_paths(root, &[file.to_path_buf()], &config).map(Some)
+}
+
+fn scan_paths(root: &Path, files: &[PathBuf], config: &Config) -> anyhow::Result<Report> {
     let mut crate_dirs = HashMap::new();
     let sources = files
         .iter()
@@ -52,7 +80,7 @@ pub fn build_report(root: &Path, min_severity: Option<Severity>) -> anyhow::Resu
             source,
             in_lib: *in_lib,
         }),
-        &config,
+        config,
     );
     for e in &errors {
         eprintln!("warning: {e}");
@@ -92,16 +120,9 @@ fn collect_rs_files(root: &Path, exclude: &[String]) -> anyhow::Result<Vec<PathB
     if root.is_file() {
         return Ok(vec![root.to_path_buf()]);
     }
-    let mut overrides = ignore::overrides::OverrideBuilder::new(root);
-    for glob in exclude {
-        overrides
-            // rustgrade: allow(alloc-in-loop) once per config entry; the builder needs a negated &str
-            .add(&format!("!{glob}"))
-            .with_context(|| format!("invalid exclude glob `{glob}` in {CONFIG_FILE}"))?;
-    }
     let walker = ignore::WalkBuilder::new(root)
         .require_git(false)
-        .overrides(overrides.build()?)
+        .overrides(exclude_overrides(root, exclude)?)
         // Not every repo gitignores it, and it is never source.
         .filter_entry(|e| e.file_name() != "target")
         .build();
@@ -116,6 +137,17 @@ fn collect_rs_files(root: &Path, exclude: &[String]) -> anyhow::Result<Vec<PathB
     }
     out.sort();
     Ok(out)
+}
+
+fn exclude_overrides(root: &Path, exclude: &[String]) -> anyhow::Result<Override> {
+    let mut overrides = OverrideBuilder::new(root);
+    for glob in exclude {
+        overrides
+            // rustgrade: allow(alloc-in-loop) once per config entry; the builder needs a negated &str
+            .add(&format!("!{glob}"))
+            .with_context(|| format!("invalid exclude glob `{glob}` in {CONFIG_FILE}"))?;
+    }
+    Ok(overrides.build()?)
 }
 
 /// True if `file` is part of a library target: its crate has `src/lib.rs` and

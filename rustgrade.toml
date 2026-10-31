@@ -2,4 +2,5 @@
 
 # Fixtures contain anti-patterns on purpose; they are checked by the snapshot
 # tests in crates/rustgrade-cli/tests/fixtures.rs instead.
-exclude = ["evals/fixtures/"]
+# Agent eval tasks are test material too: hidden tests and reference solutions.
+exclude = ["evals/fixtures/", "evals/agents/tasks/"]
