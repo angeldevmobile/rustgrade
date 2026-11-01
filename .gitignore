@@ -5,3 +5,4 @@ target/
 # Fixtures are scanned, not built as part of the repo; a run of
 # `cargo test` inside one should not leave a lockfile behind.
 evals/fixtures/*/Cargo.lock
+__pycache__/

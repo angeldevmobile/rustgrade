@@ -197,7 +197,7 @@ fn installs_skill_and_commands_for_claude_and_is_idempotent() {
     );
 
     let (_, doctor) = sb.run(&["doctor"]);
-    assert!(doctor.contains("up to date (11 files)"), "{doctor}");
+    assert!(doctor.contains("up to date (12 files)"), "{doctor}");
 }
 
 #[test]
@@ -457,7 +457,7 @@ fn no_instructions_skips_the_section_and_a_later_run_drops_it() {
     let (_, out) = sb.run(&["install", "--agent", "claude", "--no-instructions"]);
     assert!(!exists(&sb.proj("CLAUDE.md")), "{out}");
     let (_, doctor) = sb.run(&["doctor"]);
-    assert!(doctor.contains("up to date (10 files)"), "{doctor}");
+    assert!(doctor.contains("up to date (11 files)"), "{doctor}");
 
     sb.run(&["install", "--agent", "claude"]);
     assert!(exists(&sb.proj("CLAUDE.md")));

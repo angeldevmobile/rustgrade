@@ -98,13 +98,14 @@ your judgment findings are reported next to it, not mixed into it. Flags:
 
 ## Commands
 
-Two commands: `audit [path]` (graded review, see
-[references/rubric.md](references/rubric.md)) and `hot-path <fn>`
-(benchmark-driven optimization). `rustgrade install` adds them as `/audit` and
-`/hot-path` in Claude Code, Cursor, Gemini CLI, Copilot (VS Code) and Windsurf;
-the Claude Code plugin names them `/rustgrade:audit` and `/rustgrade:hot-path`.
-Codex has no command files: when asked for a rustgrade audit or a hot-path
-optimization, follow the same steps from this skill.
+Three commands: `audit [path]` (graded review, see
+[references/rubric.md](references/rubric.md)), `harden [path]` (survive hostile
+input, proving each fix with a test that failed first) and `hot-path <fn>`
+(benchmark-driven optimization). `rustgrade install` adds them as `/audit`,
+`/harden` and `/hot-path` in Claude Code, Cursor, Gemini CLI, Copilot (VS Code)
+and Windsurf; the Claude Code plugin names them `/rustgrade:audit` and so on.
+Codex has no command files: when asked for one of these, follow the same steps
+from this skill.
 
 ## Limitations: verify before you fix
 

@@ -8,6 +8,7 @@ with checks rustgrade does not control: hidden tests and clippy lints.
     C  skill, commands and the CLI (what `rustgrade install` gives a user)
     D  C plus a short rustgrade section in the project's CLAUDE.md
     H  C plus `rustgrade hook` on every edit (no CLAUDE.md section)
+    G  H, then a fresh session runs `/harden src/lib.rs` on the result
 
 Usage, from the repo root (needs `cargo build --release` and `claude` on PATH):
 
@@ -46,6 +47,7 @@ CONDITIONS = {
     "C": "skill + CLI",
     "D": "skill + CLI + CLAUDE.md section",
     "H": "skill + CLI + edit hook",
+    "G": "H, then /harden in a fresh session",
 }
 HOOK_SETTINGS = {"hooks": {"PostToolUse": [{
     "matcher": "Edit|Write",
@@ -72,6 +74,8 @@ TOOLS = [
     "Read", "Write", "Edit", "Glob", "Grep", "Skill", "TodoWrite",
     "Bash(cargo *)", "Bash(cargo:*)", "Bash(rustgrade *)", "Bash(rustgrade:*)",
     "PowerShell(cargo *)", "PowerShell(rustgrade *)",
+    # What /harden uses to force a clippy re-run and to bound a test that may hang.
+    "Bash(touch *)", "Bash(timeout *)",
 ]
 AGENT_TIMEOUT = 25 * 60
 
@@ -94,6 +98,11 @@ def sh(cmd, cwd, env=None, timeout=600):
 
 def copy_starter(task, dest):
     shutil.copytree(TASKS / task / "starter", dest)
+    # copytree keeps old mtimes, and runs of a task share a target dir: cargo would
+    # take untouched sources as already built and test the previous run's code.
+    for p in dest.rglob("*"):
+        if p.is_file():
+            os.utime(p)
 
 
 def install_hidden_tests(task, crate):
@@ -215,10 +224,19 @@ def summarize_transcript(lines):
         "cli_used": cli_used,
         "hook_findings": hook_findings,
         "is_error": result.get("is_error"),
+        "api_error": result.get("api_error"),
         "duration_s": round((result.get("duration_ms") or 0) / 1000),
         "cost_usd": result.get("total_cost_usd"),
         "turns": result.get("num_turns"),
     }
+
+
+def stop_on_api_error(name, agent, work):
+    """A usage limit fails every later run in under a second: stop instead of
+    recording them. No metrics.json is written, so the report never counts this run."""
+    if agent["api_error"]:
+        shutil.rmtree(work, ignore_errors=True)
+        sys.exit(f"[{name}] stopped, the agent could not run: {agent['api_error']}")
 
 
 def run_one(task, cond, rep, model, run_dir, claude, prompt_file="prompt.md"):
@@ -228,28 +246,43 @@ def run_one(task, cond, rep, model, run_dir, claude, prompt_file="prompt.md"):
     work = Path(tempfile.mkdtemp(prefix=f"rg-eval-{name}-"))
     crate = work / task
     copy_starter(task, crate)
-    if cond in ("B", "C", "D", "H"):
+    if cond in ("B", "C", "D", "H", "G"):
         install_skill(crate)
     if cond == "D":
         (crate / "CLAUDE.md").write_text(PROJECT_INSTRUCTIONS, encoding="utf-8")
-    if cond == "H":
+    if cond in ("H", "G"):
         (crate / ".claude" / "settings.json").write_text(json.dumps(HOOK_SETTINGS), encoding="utf-8")
-    env = toolchain_env(cond in ("C", "D", "H"), run_dir / "bin")
+    env = toolchain_env(cond in ("C", "D", "H", "G"), run_dir / "bin")
     env["CARGO_TARGET_DIR"] = str(run_dir / f"target-{task}")
 
     prompt = (TASKS / task / prompt_file).read_text(encoding="utf-8")
-    cmd = [
-        claude, "-p", prompt, "--model", model,
-        "--output-format", "stream-json", "--verbose", "--include-hook-events",
-        "--setting-sources", "project", "--strict-mcp-config", "--no-session-persistence",
-        "--permission-mode", "dontAsk", "--allowedTools", ",".join(TOOLS),
-    ]
+    def session(text):
+        cmd = [
+            claude, "-p", text, "--model", model,
+            "--output-format", "stream-json", "--verbose", "--include-hook-events",
+            "--setting-sources", "project", "--strict-mcp-config", "--no-session-persistence",
+            "--permission-mode", "dontAsk", "--allowedTools", ",".join(TOOLS),
+        ]
+        return sh(cmd, crate, env, AGENT_TIMEOUT)
+
     print(f"[{name}] agent running in {crate}", file=sys.stderr)
     started = time.time()
-    code, transcript = sh(cmd, crate, env, AGENT_TIMEOUT)
+    code, transcript = session(prompt)
     (out_dir / "transcript.jsonl").write_text(transcript, encoding="utf-8")
     agent = summarize_transcript(transcript.splitlines())
+    stop_on_api_error(name, agent, work)
     agent["exit_code"] = code
+    if cond == "G":
+        shutil.copytree(crate / "src", out_dir / "src-before-harden")
+        print(f"[{name}] /harden", file=sys.stderr)
+        code, transcript = session("/harden src/lib.rs")
+        (out_dir / "transcript-harden.jsonl").write_text(transcript, encoding="utf-8")
+        second = summarize_transcript(transcript.splitlines())
+        stop_on_api_error(name, second, work)
+        agent["harden"] = second
+        agent["exit_code"] = agent["exit_code"] or code
+        agent["cost_usd"] = (agent["cost_usd"] or 0) + (second["cost_usd"] or 0)
+        agent["duration_s"] += second["duration_s"]
     agent["wall_s"] = round(time.time() - started)
 
     shutil.copytree(crate / "src", out_dir / "src")
@@ -316,8 +349,14 @@ def load_runs(run_ids):
     dirs = [RUNS / r for r in run_ids] if run_ids else [
         d for d in sorted(RUNS.iterdir()) if d.is_dir() and d.name[:1].isdigit()
     ][-1:]
-    return [json.loads(p.read_text(encoding="utf-8"))
+    runs = [json.loads(p.read_text(encoding="utf-8"))
             for d in dirs for p in sorted(d.glob("*/metrics.json"))]
+    # Runs from before stop_on_api_error: a session that failed has no real result.
+    valid = [r for r in runs
+             if not r["agent"]["is_error"] and not (r["agent"].get("harden") or {}).get("is_error")]
+    if len(valid) < len(runs):
+        print(f"left out {len(runs) - len(valid)} run(s) whose agent failed", file=sys.stderr)
+    return valid
 
 
 def cmd_report(args):

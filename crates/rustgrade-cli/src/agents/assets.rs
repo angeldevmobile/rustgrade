@@ -50,6 +50,10 @@ pub const COMMANDS: &[Asset] = &[
         contents: include_str!("../../assets/commands/audit.md"),
     },
     Asset {
+        path: "harden.md",
+        contents: include_str!("../../assets/commands/harden.md"),
+    },
+    Asset {
         path: "hot-path.md",
         contents: include_str!("../../assets/commands/hot-path.md"),
     },

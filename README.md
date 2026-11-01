@@ -38,8 +38,12 @@ rustgrade audit: B (89), capped by 1 high finding
 - **While an agent writes Rust.** The skill teaches it to borrow before cloning,
   return typed errors, keep channels bounded and document every `unsafe`, then to scan
   its own work before finishing.
+- **While it edits, in Claude Code.** A hook scans each Rust file the agent touches and
+  hands the findings back, so it fixes them even if it never loads the skill.
 - **When you review Rust.** `/audit` combines the scanner, clippy and your tests into a
   grade, then adds what tools can't see: API shape, lock granularity, missing tests.
+- **When input can't be trusted.** `/harden` attacks the code from where outside data
+  comes in, and fixes only what a failing test demonstrates. The tests stay as proof.
 - **When a function must be fast.** `/hot-path` optimizes it and proves each change with
   a benchmark.
 - **In CI.** Fail a pull request on a grade or a severity, and see findings as
@@ -49,11 +53,11 @@ rustgrade audit: B (89), capped by 1 high finding
 
 | Where | What you get | Set up with |
 |---|---|---|
-| Claude Code | Skill, `/audit`, `/hot-path` | `--agent claude`, or the plugin below |
-| Cursor | Skill, `/audit`, `/hot-path` | `--agent cursor` |
-| Gemini CLI | Skill, `/audit`, `/hot-path` | `--agent gemini` |
-| GitHub Copilot (VS Code) | Skill, `/audit`, `/hot-path` | `--agent copilot` |
-| Windsurf / Devin Desktop | Skill, `/audit`, `/hot-path` | `--agent windsurf` |
+| Claude Code | Skill, edit hook, `/audit`, `/harden`, `/hot-path` | `--agent claude`, or the plugin below |
+| Cursor | Skill, `/audit`, `/harden`, `/hot-path` | `--agent cursor` |
+| Gemini CLI | Skill, `/audit`, `/harden`, `/hot-path` | `--agent gemini` |
+| GitHub Copilot (VS Code) | Skill, `/audit`, `/harden`, `/hot-path` | `--agent copilot` |
+| Windsurf / Devin Desktop | Skill, `/audit`, `/harden`, `/hot-path` | `--agent windsurf` |
 | Codex CLI | Skill (ask for "a rustgrade audit") | `--agent codex` |
 | Terminal and CI | `scan`, `audit`, `rules` | Just the CLI |
 
@@ -87,6 +91,13 @@ request but load a skill only when they decide to. In
 [our evals](evals/agents/RESULTS.md) the skill was used in 0 of 6 coding runs without
 it and in 6 of 6 with it.
 
+The hook needs no such decision from the agent. Across
+[27 runs on three tasks](evals/agents/RESULTS-hook.md), medium-or-worse findings went from
+6 with no help to 2 with the section and 1 with the hook; `unwrap` and `expect` counted by
+clippy went from 5 to 0 with either, at no extra cost. That sample is small, and hidden
+tests passed in every run with or without them: this removes what the scanner sees, it
+does not prove behavior.
+
 <details>
 <summary>Claude Code plugin</summary>
 
@@ -97,7 +108,8 @@ Inside a Claude Code session:
 /plugin install rustgrade@rustgrade
 ```
 
-Plugin commands are namespaced: `/rustgrade:audit`, `/rustgrade:hot-path`. The plugin
+Plugin commands are namespaced: `/rustgrade:audit`, `/rustgrade:harden`,
+`/rustgrade:hot-path`. The plugin
 brings the edit hook, which needs the CLI and stays silent without it. It does not edit
 `CLAUDE.md`; to add the section too, copy the lines in
 [`targets/instructions.md`](targets/instructions.md).
@@ -130,8 +142,15 @@ each agent's docs.
 
 ```
 /audit [path]      graded review: scanner + clippy + tests, A to F, then judgment
+/harden [path]     survive hostile input: each fix proven by a test that failed first
 /hot-path <fn>     optimize a critical function, proven with a benchmark
 ```
+
+`/harden` is new and lightly measured. In [7 runs on three tasks](evals/agents/RESULTS-harden.md),
+all with their hidden tests already passing, it found real bugs in the 3 runs on a thread
+pool, each reproduced separately, and nothing in the 4 runs on a decoder and a cache. It
+doesn't find the same bugs every time. It reports what it tried and what it did not cover;
+it never claims code is secure.
 
 Or just ask: "review this crate", "why does this panic". With the section installed, the
 agent also runs the scanner on Rust it writes.
@@ -184,7 +203,7 @@ jobs:
 Run it from the repo root: file paths include the scan path. Inline suppressions are not
 uploaded, because code scanning would open alerts for them; they stay in
 `--format json` with their reason. To pin a version, replace `latest/download` with
-`download/v0.4.0`.
+`download/v0.5.0`.
 
 </details>
 

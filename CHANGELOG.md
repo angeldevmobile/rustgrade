@@ -11,8 +11,13 @@ installed plugin when that version changes.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-31
+
 ### Added
 
+- `/harden`: makes Rust code survive input it does not control. It attacks each
+  path from the boundary inward and fixes only what a failing test demonstrates,
+  keeping the tests as proof. It reports any change callers can observe.
 - `install` adds the edit hook to Claude Code's `.claude/settings.json`, keeping
   your other settings; `uninstall` puts them back and `--no-hook` skips it. The
   plugin brings the same hook in `hooks/hooks.json`. Both stay silent where the CLI
