@@ -7,12 +7,23 @@ the borrow checker, `.unwrap()` in request handlers, a std `Mutex` held across `
 allocations in every loop iteration. rustgrade gives the agent better defaults, checks
 the result with a deterministic scanner, and grades the crate from A to F.
 
+**Measured, not promised:** on three tasks, 9 agent runs without rustgrade left 5
+`unwrap` / `expect` calls in library code, by clippy's count. 9 runs with its edit hook
+left 0, at no extra cost. It's a small sample; [the numbers and their limits](evals/agents/RESULTS-hook.md)
+are public.
+
+![An agent writes unwrap, the rustgrade hook reports it, and the agent changes the function to return a Result](docs/demo.gif)
+
+<sub>The agent was told to use `unwrap` here so the hook would fire. In a take without that
+instruction, it wrote the `Result` on its own.</sub>
+
 ```bash
 cargo binstall rustgrade            # or: cargo install --locked rustgrade
 rustgrade install --agent all       # every agent detected, in this project
 ```
 
-Then keep working as usual, or ask for a review with `/audit`.
+Then keep working as usual, ask for a review with `/audit`, or test code against hostile
+input with `/harden`.
 
 Works in **Claude Code, Cursor, Codex CLI, Gemini CLI, GitHub Copilot and Windsurf**,
 and on its own in your terminal or CI. No LLM, no network, no account: your code stays
