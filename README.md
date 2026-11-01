@@ -102,7 +102,8 @@ request but load a skill only when they decide to. In
 [our evals](evals/agents/RESULTS.md) the skill was used in 0 of 6 coding runs without
 it and in 6 of 6 with it.
 
-The hook needs no such decision from the agent. Across
+The hook needs no such decision from the agent: the harness (Claude Code itself) runs it
+on every edit. Across
 [27 runs on three tasks](evals/agents/RESULTS-hook.md), medium-or-worse findings went from
 6 with no help to 2 with the section and 1 with the hook; `unwrap` and `expect` counted by
 clippy went from 5 to 0 with either, at no extra cost. That sample is small, and hidden
